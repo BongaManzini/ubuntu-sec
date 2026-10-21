@@ -1,0 +1,2160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ubuntu: Cybersecurity Awareness Platform</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary-color: #4f46e5; /* Indigo 600 */
+            --accent-color: #06b6d4; /* Cyan 500 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: black; /* Gray 50 */
+        }
+        /* Custom scrollbar for chat/alerts */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1; /* Gray 300 */
+            border-radius: 10px;
+        }
+        /* Custom CSS for Game elements */
+        .game-card {
+            min-height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s;
+            user-select: none;
+        }
+        .game-card:hover {
+            transform: scale(1.02);
+        }
+        .bounce-game-area {
+            background-color: #0d1a2d; /* Dark blue/Grey for tech look */
+            border-radius: 1rem;
+            height: 400px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        .falling-object {
+            position: absolute;
+            animation: fall linear 3s infinite;
+            padding: 8px 12px;
+            border-radius: 9999px;
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0.9;
+            cursor: pointer;
+        }
+        @keyframes fall {
+            0% { top: -50px; }
+            100% { top: 100%; }
+        }
+        /* Biometric Icon Animation */
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+        }
+        .biometric-pulse {
+            animation: pulse-green 1.5s infinite;
+        }
+    </style>
+    <script>
+        const MAX_LEVEL = 5;
+        let currentPage = 'home';
+        const views = {
+            'home': 'Dashboard',
+            'tutorials': 'Interactive Tutorials',
+            'threat-map': 'Threat Map & Data',
+            'alerts': 'Alerts & Notifications',
+            'resources': 'Resources & Reporting',
+            'certs': 'Certifications & Pro Training', 
+            'admin-logs': 'Admin & Security Logs', // NEW ADMIN PAGE
+        };
+        
+        // Map of Topics to Game Keys and Styles
+        const gameViews = {
+            'Phishing & Scams': { key: 'phishing', icon: 'scan-eye', color: 'red' },
+            'Password Safety': { key: 'password', icon: 'key', color: 'primary' },
+            'Safe Browsing': { key: 'browsing', icon: 'link', color: 'accent' },
+            'Social Engineering': { key: 'social', icon: 'users', color: 'amber' },
+            'Ransomware & Malware': { key: 'ransomware', icon: 'bug', color: 'red' },
+            'Mobile Security': { key: 'mobile', icon: 'smartphone', color: 'green' }
+        };
+
+        // UPDATED: Simulated Module Progress (Resetting all demo data to a clean start)
+        let moduleProgress = {
+            'Phishing & Scams': { progress: 0, completed: false, level: 1, quizComplete: false }, 
+            'Password Safety': { progress: 0, completed: false, level: 1, quizComplete: false }, 
+            'Safe Browsing': { progress: 0, completed: false, level: 1, quizComplete: false },
+            'Social Engineering': { progress: 0, completed: false, level: 1, quizComplete: false },
+            'Ransomware & Malware': { progress: 0, completed: false, level: 1, quizComplete: false },
+            'Mobile Security': { progress: 0, completed: false, level: 1, quizComplete: false }
+        };
+        
+        let activeGameTopic = null; // Stores the full string (e.g., 'Phishing & Scams')
+        let isQuizMode = false; // Tracks if the current modal is a quiz or a game
+        let gameTimer = null; // Used for timed games like Safe Browsing/Ransomware
+        let animationFrameId = null; // Used for continuous loop games
+        
+        // --- GEMINI API INTEGRATION ---
+        
+        const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+        const API_KEY = ""; // Placeholder for Canvas runtime
+
+        // Function to call the Gemini API with Search Grounding
+        async function callGeminiAPI(prompt, systemInstruction, enableSearch = true) {
+            const url = GEMINI_API_URL + API_KEY;
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                tools: enableSearch ? [{ "google_search": {} }] : undefined,
+                systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+            };
+
+            let result = { text: "Error: Could not connect to the AI Agent.", sources: [] };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const jsonResult = await response.json();
+                const candidate = jsonResult.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    result.text = candidate.content.parts[0].text;
+                    
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        result.sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title);
+                    }
+                }
+            } catch (e) {
+                console.error("Gemini API error:", e);
+                // Fallback error message already set in 'result'
+            }
+
+            return result;
+        }
+
+        // --- NAVIGATION AND STATE ---
+
+        function setView(view) {
+            currentPage = view;
+            activeGameTopic = null;
+            isQuizMode = false;
+            renderApp();
+            // Clear any active game state when navigating
+            if (gameTimer) clearTimeout(gameTimer);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            // Close mobile menu if open
+            const menu = document.getElementById('mobile-menu');
+            if (menu.classList.contains('flex')) {
+                menu.classList.remove('flex');
+                menu.classList.add('hidden');
+            }
+        }
+        
+        // --- ADMIN & BIOMETRIC LOGIN LOGIC ---
+        function showBiometricModal() {
+            const modal = document.getElementById('game-modal');
+            const wrapper = document.getElementById('modal-content-wrapper');
+            if (modal && wrapper) {
+                const contentHtml = `
+                    <div class="flex flex-col items-center justify-center p-8 text-center space-y-6">
+                        <i data-lucide="fingerprint" class="w-16 h-16 text-primary biometric-pulse rounded-full p-3 bg-indigo-100"></i>
+                        <h3 class="text-2xl font-bold text-gray-900">Admin Access: Biometric Verification</h3>
+                        <p class="text-gray-600">As a Critical Tier Admin, the system requires biometric verification for access to security logs (SSDLC requirement).</p>
+                        <div id="biometric-feedback" class="text-red-500 font-semibold h-6">Scanning...</div>
+                        <button onclick="simulateBiometricSuccess()" class="py-3 px-6 bg-green-600 text-white font-bold rounded-xl shadow-md hover:bg-green-700 transition duration-150">
+                            Simulate Scan
+                        </button>
+                        <button onclick="hideModal()" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-xl">
+                            Cancel
+                        </button>
+                    </div>
+                `;
+                wrapper.innerHTML = contentHtml;
+                modal.classList.remove('hidden');
+                lucide.createIcons();
+            }
+        }
+
+        function simulateBiometricSuccess() {
+            const feedback = document.getElementById('biometric-feedback');
+            if (feedback) {
+                feedback.textContent = "Verification Successful! Access Granted.";
+                feedback.classList.remove('text-red-500');
+                feedback.classList.add('text-green-600');
+            }
+            setTimeout(() => {
+                hideModal();
+                setView('admin-logs'); // Navigate to the admin page upon success
+            }, 800);
+        }
+
+        function getAdminLogView() {
+             return `
+                <div id="view-admin-logs" class="p-4 lg:p-8 space-y-8">
+                    <h2 class="text-3xl font-bold text-red-600 flex items-center">
+                        <i data-lucide="server-cog" class="w-7 h-7 mr-3"></i> CRITICAL: Security & Log Database System
+                    </h2>
+                    <p class="text-gray-600">Centralized log monitoring for high-privilege actions, audit trails, and security alerts (SSDLC Continuous Monitoring Phase).</p>
+
+                    <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+                        <div class="p-4 bg-gray-50 border-b">
+                            <h3 class="text-xl font-bold text-gray-900">Recent Critical Events (Last 48 Hours)</h3>
+                        </div>
+                        <div class="divide-y divide-gray-100 max-h-[600px] overflow-y-auto custom-scroll text-sm">
+                            ${renderLogEntry('Admin', 'Failed biometric login attempt (4x) from unknown IP (10.10.1.1).', 'Critical', '2025-11-16 09:15:22')}
+                            ${renderLogEntry('Company Partner', 'Unauthorized access attempt on another partner\'s Certification Status API endpoint.', 'High', '2025-11-16 08:55:01')}
+                            ${renderLogEntry('Teaching Instructor', 'Bulk download of 500+ student assessment records initiated.', 'Medium', '2025-11-15 22:30:45')}
+                            ${renderLogEntry('AI Agent Service', 'Anomaly: High volume of prompts referencing "SQL injection" and "admin passwords" detected.', 'Critical', '2025-11-15 18:05:10')}
+                            ${renderLogEntry('Professional Cert', 'Role-Based Access Check failed: Attempted to view Admin Log page.', 'Low', '2025-11-15 12:44:00')}
+                            ${renderLogEntry('Admin', 'Successful biometric login from pre-authorized device.', 'Info', '2025-11-15 08:00:00')}
+                            ${renderLogEntry('Threat Map Feed', 'External data feed sync complete. 12 new scam types added.', 'Info', '2025-11-14 00:00:00')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderLogEntry(role, message, level, timestamp) {
+            let color;
+            switch(level) {
+                case 'Critical': color = 'bg-red-500 text-white'; break;
+                case 'High': color = 'bg-orange-400 text-gray-900'; break;
+                case 'Medium': color = 'bg-yellow-400 text-gray-900'; break;
+                default: color = 'bg-gray-200 text-gray-700';
+            }
+            return `
+                <div class="flex justify-between items-center p-3 hover:bg-gray-50 transition duration-150">
+                    <div class="flex items-center space-x-3 w-1/3">
+                        <span class="font-bold w-32 ${color} px-2 py-0.5 rounded-full text-xs text-center">${level}</span>
+                        <span class="font-semibold text-gray-900">${role}</span>
+                    </div>
+                    <div class="w-1/2 text-gray-700">${message}</div>
+                    <div class="w-1/6 text-right text-gray-500 text-xs">${timestamp}</div>
+                </div>
+            `;
+        }
+
+        // --- LEVEL ADVANCEMENT LOGIC ---
+
+        function advanceGameLevel(topic, scorePercentage) {
+            // Clear any timers or animation frames before advancing
+            if (gameTimer) clearTimeout(gameTimer);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            
+            let currentLevel = moduleProgress[topic].level;
+            let newLevel = currentLevel;
+            let finalProgress = moduleProgress[topic].progress;
+
+            // Quiz mode only grants full completion/failure
+            if (isQuizMode) {
+                 if (scorePercentage >= 80) {
+                    moduleProgress[topic].quizComplete = true;
+                    // If quiz passed, force progress to 100%
+                    closeGame(topic, 100);
+                 } else {
+                    // If quiz failed, close but don't gain progress, keep quizComplete false
+                    closeGame(topic, moduleProgress[topic].progress); 
+                 }
+                 return;
+            }
+
+            // Game Mode (L1-L4 progression)
+            if (scorePercentage >= 80) { 
+                newLevel = currentLevel + 1;
+                // Calculate progress based on level progression
+                finalProgress = Math.min(100, (newLevel - 1) * (100 / MAX_LEVEL)); 
+            } else {
+                 // Simulate minor progress bump for effort if failed
+                finalProgress = Math.min(80, moduleProgress[topic].progress + 10);
+            }
+
+            // If game level advances past L4, set progress, but don't mark as full complete (L5 is the quiz)
+            if (newLevel > MAX_LEVEL) {
+                 moduleProgress[topic].level = MAX_LEVEL; // Cap game progress at MAX_LEVEL
+                 closeGame(topic, finalProgress);
+            } else {
+                // Update progress and level, then re-launch the next level
+                moduleProgress[topic].level = newLevel;
+                moduleProgress[topic].progress = finalProgress;
+                
+                // Close current modal and launch the next level
+                hideModal(); 
+                launchGame(topic); 
+            }
+        }
+        
+        // --- MODAL AND GAME LAUNCH/CLOSE ---
+
+        function wrapGameContentInModal(topic, icon, iconColor, currentLevel) {
+            const title = isQuizMode ? `${topic} | Final Assessment Quiz` : `${topic} | Level ${currentLevel > MAX_LEVEL ? MAX_LEVEL : currentLevel} of ${MAX_LEVEL - 1} (Game)`;
+            
+            let contentHtml = '';
+            const gameData = gameViews[topic];
+
+            // Delegate content generation
+            if (gameData.key === 'phishing') { contentHtml = getPhishingGameContent(topic, currentLevel); }
+            else if (gameData.key === 'password') { contentHtml = getPasswordGameContent(topic, currentLevel); }
+            else if (gameData.key === 'browsing') { contentHtml = getSafeBrowsingGameContent(topic, currentLevel); }
+            else if (gameData.key === 'social') { contentHtml = getSocialEngineeringGameContent(topic, currentLevel); }
+            else if (gameData.key === 'ransomware') { contentHtml = getRansomwareGameContent(topic, currentLevel); }
+            else if (gameData.key === 'mobile') { contentHtml = getMobileSecurityGameContent(topic, currentLevel); }
+            
+            return `
+                <div class="flex flex-col h-full">
+                    <!-- Modal Header -->
+                    <div class="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white rounded-t-2xl z-10">
+                        <h2 class="2xl font-bold text-gray-900 flex items-center text-${iconColor}-600">
+                            <i data-lucide="${icon}" class="w-6 h-6 mr-3"></i> ${title}
+                        </h2>
+                        <button onclick="closeGame()" class="text-gray-500 hover:text-red-600 p-2 rounded-full transition duration-150">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Modal Body (Game Content) -->
+                    <div class="p-6 overflow-y-auto flex-grow space-y-6 custom-scroll">
+                        ${contentHtml}
+                        
+                        <!-- Exit Button for consistent UX -->
+                        <div class="pt-4 border-t border-gray-100">
+                            <button onclick="closeGame()" class="w-full py-3 bg-gray-300 text-gray-800 font-bold rounded-xl shadow-md hover:bg-gray-400 transition duration-150 flex items-center justify-center">
+                                <i data-lucide="log-out" class="w-5 h-5 mr-2"></i> Exit ${isQuizMode ? 'Quiz' : 'Challenge'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function showModal(contentHtml) {
+            const modal = document.getElementById('game-modal');
+            const wrapper = document.getElementById('modal-content-wrapper');
+            if (modal && wrapper) {
+                wrapper.innerHTML = contentHtml; // Inject content
+                modal.classList.remove('hidden');
+                lucide.createIcons(); // Re-render icons after injection
+            }
+        }
+
+        function hideModal() {
+            // Clear any active game state before hiding the modal
+            if (gameTimer) clearTimeout(gameTimer);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            const modal = document.getElementById('game-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                document.getElementById('modal-content-wrapper').innerHTML = '';
+            }
+        }
+
+        function launchGame(topic, mode = 'game') {
+            activeGameTopic = topic;
+            isQuizMode = (mode === 'quiz');
+            const gameData = gameViews[topic];
+            let currentLevel = moduleProgress[topic].level;
+            
+            // If quiz mode is launched, always use the quiz level (L5)
+            if (isQuizMode) {
+                currentLevel = MAX_LEVEL;
+                // If quiz is already complete, show completion screen
+                if (moduleProgress[topic].quizComplete) {
+                     currentLevel = MAX_LEVEL + 1; 
+                }
+            } else {
+                 // If game is completed, start from L1
+                if (currentLevel > MAX_LEVEL) {
+                    currentLevel = 1;
+                    moduleProgress[topic].level = 1;
+                    moduleProgress[topic].progress = 0;
+                }
+            }
+            
+            const modalContent = wrapGameContentInModal(
+                topic,
+                gameData.icon,
+                gameData.color,
+                currentLevel
+            );
+
+            showModal(modalContent);
+            
+            // Run specific setup functions after content is in the DOM
+            if (gameData.key === 'phishing' && currentLevel <= MAX_LEVEL) { setupPhishingGame(currentLevel); }
+            else if (gameData.key === 'password' && currentLevel <= MAX_LEVEL) { setTimeout(checkPasswordStrength, 50); }
+            else if (gameData.key === 'browsing' && currentLevel <= MAX_LEVEL) { setupBounceGame(currentLevel); }
+            else if (gameData.key === 'social' && currentLevel <= MAX_LEVEL) { setupSocialGame(currentLevel); }
+            else if (gameData.key === 'ransomware' && currentLevel <= MAX_LEVEL) { setupRansomwareGame(currentLevel); }
+            else if (gameData.key === 'mobile' && currentLevel <= MAX_LEVEL) { setupMobileGame(currentLevel); }
+        }
+
+        function closeGame(topicToUpdate = null, newProgress = null) {
+            // Clear any timers or animation frames before closing
+            if (gameTimer) clearTimeout(gameTimer);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            if (topicToUpdate && newProgress !== null) {
+                 moduleProgress[topicToUpdate] = { 
+                    ...moduleProgress[topicToUpdate], 
+                    progress: newProgress, 
+                    completed: moduleProgress[topicToUpdate].quizComplete, // Only marked complete if quiz is passed
+                    level: moduleProgress[topicToUpdate].level 
+                };
+            }
+            hideModal();
+            activeGameTopic = null;
+            isQuizMode = false;
+            setView('tutorials'); // Return to the main tutorials list, which re-renders progress
+        }
+
+        function renderApp() {
+            // Get the main content area container
+            const mainContentArea = document.getElementById('main-content-area');
+            if (!mainContentArea) return;
+
+            // Update mobile header title
+            document.getElementById('header-title').textContent = views[currentPage];
+
+            // 1. Clear current content
+            mainContentArea.innerHTML = '';
+            
+            // 2. Generate and append content for the currentPage
+            let contentHtml = '';
+            switch (currentPage) {
+                case 'home': contentHtml = getHomeView(); break;
+                case 'tutorials': contentHtml = getTutorialsView(); break;
+                case 'threat-map': contentHtml = getThreatMapView(); break;
+                case 'alerts': contentHtml = getAlertsView(); break;
+                case 'resources': contentHtml = getResourcesView(); break;
+                case 'certs': contentHtml = getCertsView(); break;
+                case 'admin-logs': contentHtml = getAdminLogView(); break; // NEW ADMIN LOGS
+                default: contentHtml = getHomeView();
+            }
+            mainContentArea.innerHTML = contentHtml;
+            
+            // 3. Highlight current navigation links
+            Object.keys(views).forEach(view => {
+                document.getElementById(`nav-${view}-desktop`)?.classList.remove('bg-indigo-100', 'text-primary');
+                document.getElementById(`nav-${view}-mobile`)?.classList.remove('text-primary');
+            });
+            document.getElementById(`nav-${currentPage}-desktop`)?.classList.add('bg-indigo-100', 'text-primary');
+            document.getElementById(`nav-${currentPage}-mobile`)?.classList.add('text-primary');
+
+            // 4. Re-render icons after DOM manipulation
+            lucide.createIcons();
+        }
+
+        // --- Utility Functions ---
+        
+        function dataVisPlaceholder(title, description, color, icon) {
+            return `
+                <div class="p-4 bg-white rounded-xl shadow-lg border border-gray-100">
+                    <div class="flex items-center justify-between">
+                        <div class="text-3xl font-semibold text-gray-900">${title}</div>
+                        <div class="p-2 rounded-full bg-${color}-100 text-${color}-600">
+                            <i data-lucide="${icon}" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-500">${description}</p>
+                </div>
+            `;
+        }
+
+        function renderAlert(title, message, date, type) {
+            let color, icon;
+            switch(type) {
+                case 'critical': color = 'red'; icon = 'alert-triangle'; break;
+                case 'advisory': color = 'yellow'; icon = 'zap'; break;
+                case 'tip': color = 'green'; icon = 'lightbulb'; break;
+                default: color = 'blue'; icon = 'info';
+            }
+            return `
+                <div class="flex items-start space-x-4 p-4 border-b border-gray-100 hover:bg-gray-50 transition duration-150 rounded-xl">
+                    <div class="p-2 rounded-full bg-${color}-100 text-${color}-600 flex-shrink-0 mt-1">
+                        <i data-lucide="${icon}" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-grow">
+                        <h4 class="font-semibold text-gray-900">${title}</h4>
+                        <p class="text-sm text-gray-600 mt-1">${message}</p>
+                        <div class="flex justify-between items-center mt-2">
+                            <span class="text-xs font-medium text-gray-400">${date}</span>
+                            <span class="text-xs font-semibold uppercase text-${color}-600 bg-${color}-100 px-2 py-0.5 rounded-full">${type}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // NEW: Certification card using the same structure as tutorials
+        function renderCertProfCard(title, description, cost, icon, costColor='text-green-600') {
+            return `
+                <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 p-6 space-y-4 transform transition duration-300 hover:shadow-2xl hover:-translate-y-1">
+                    <div class="flex items-center space-x-4">
+                        <div class="p-3 rounded-xl bg-accent/10 text-accent">
+                            <i data-lucide="${icon}" class="w-6 h-6"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-900">${title}</h3>
+                    </div>
+                    <p class="text-gray-600 text-sm">${description}</p>
+                    <div class="flex justify-between items-center pt-2 border-t border-gray-100">
+                        <span class="text-lg font-bold ${costColor}">${cost}</span>
+                        <button class="py-2 px-4 text-sm font-semibold rounded-lg bg-primary text-white hover:bg-indigo-700 transition duration-150">
+                            Enroll Now
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+
+        function renderTutorialCard(topic, progress, icon) {
+            const currentProgress = moduleProgress[topic]?.progress || 0;
+            const completed = moduleProgress[topic]?.completed || false;
+            const level = moduleProgress[topic]?.level || 1;
+            const quizComplete = moduleProgress[topic]?.quizComplete || false;
+            
+            const progressColor = completed ? 'bg-green-500' : (level > MAX_LEVEL ? 'bg-yellow-500' : 'bg-primary');
+            let statusText = completed ? 'Completed & Certified' : `Progress: ${currentProgress}% (Game Level ${level > MAX_LEVEL ? MAX_LEVEL : level})`;
+            if (level > MAX_LEVEL && !completed) {
+                statusText = `Game Completed! Ready for Quiz.`;
+            }
+            
+            const gameButtonText = (level > MAX_LEVEL) ? 'Review Game' : 'Start Game';
+
+            return `
+                <div class="bg-white rounded-2xl shadow-xl overflow-hidden transform transition duration-300 hover:shadow-2xl hover:-translate-y-1 border border-gray-100">
+                    <div class="p-6">
+                        <div class="flex items-center space-x-4">
+                            <div class="p-3 rounded-xl bg-primary/10 text-primary">
+                                <i data-lucide="${icon}" class="w-6 h-6"></i>
+                            </div>
+                            <h3 class="text-xl font-bold text-gray-900">${topic}</h3>
+                        </div>
+                        <p class="mt-4 text-gray-600 text-sm">Step-by-step visual learning guides and short animated content for ${topic}.</p>
+                        
+                        <!-- Progress Tracking -->
+                        <div class="mt-5">
+                            <div class="flex justify-between items-center text-xs font-medium">
+                                <span class="text-gray-700">${statusText}</span>
+                                ${completed ? '<span class="text-green-600"><i data-lucide="check-circle" class="w-4 h-4 inline-block"></i></span>' : (quizComplete ? '' : '')}
+                            </div>
+                            <div class="mt-1 w-full bg-gray-200 rounded-full h-2.5">
+                                <div class="h-2.5 rounded-full transition-all duration-500 ${progressColor}" style="width: ${currentProgress}%"></div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid grid-cols-2 gap-3">
+                            <button onclick="launchGame('${topic}', 'game')" class="py-2.5 text-sm font-semibold rounded-lg text-white ${level > MAX_LEVEL ? 'bg-indigo-400 hover:bg-indigo-500' : 'bg-primary hover:bg-indigo-700'} transition duration-150">
+                                <i data-lucide="play" class="w-4 h-4 mr-1 inline-block"></i> ${gameButtonText}
+                            </button>
+                            <button onclick="launchGame('${topic}', 'quiz')" class="py-2.5 text-sm font-semibold rounded-lg transition duration-150 ${quizComplete ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-accent/80 text-gray-900 hover:bg-accent'} ${level <= MAX_LEVEL ? 'opacity-50 cursor-not-allowed' : ''}" ${level <= MAX_LEVEL ? 'disabled' : ''}>
+                                <i data-lucide="help-circle" class="w-4 h-4 mr-1 inline-block"></i> ${quizComplete ? 'Review Quiz' : 'Start Quiz'}
+                            </button>
+                        </div>
+                        <p class="text-xs text-center text-gray-500 mt-2">Quiz unlocked after Game Level ${MAX_LEVEL} is completed.</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // --- GAME CONTENT HELPERS ---
+
+        function showGameFeedback(panelId, message, isSuccess) {
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            
+            const color = isSuccess ? 'green' : 'red';
+            const icon = isSuccess ? 'check-circle' : 'alert-triangle';
+            
+            panel.className = `p-4 bg-${color}-100 border border-${color}-300 rounded-xl text-sm text-${color}-800 shadow-md h-32 flex items-center justify-center`;
+            panel.innerHTML = `<p class="flex items-center"><i data-lucide="${icon}" class="w-5 h-5 mr-2"></i> ${message}</p>`;
+            lucide.createIcons();
+        }
+
+        function getModuleCompletedContent(topic) {
+            const isQuiz = isQuizMode;
+            return `
+                <section class="bg-gray-50 p-8 rounded-2xl shadow-xl border border-green-500/50 space-y-6 text-center">
+                    <i data-lucide="award" class="w-16 h-16 mx-auto text-green-600 mb-4"></i>
+                    <h3 class="2xl font-bold text-gray-900">Module ${isQuiz ? 'Certified' : 'Game Completed'}!</h3>
+                    <p class="text-lg text-gray-700">You have successfully ${isQuiz ? 'passed the final quiz and are fully certified.' : `completed all ${MAX_LEVEL} game levels. Ready for the final quiz?`}</p>
+                    ${!isQuiz ? `
+                        <button onclick="launchGame('${topic}', 'quiz')" class="py-3 px-6 bg-accent text-gray-900 font-bold rounded-xl shadow-md hover:bg-cyan-400 transition duration-150">
+                            <i data-lucide="help-circle" class="w-5 h-5 mr-2"></i> Start Final Quiz
+                        </button>
+                    ` : ''}
+                    <button onclick="closeGame()" class="py-3 px-6 bg-gray-300 text-gray-800 font-bold rounded-xl shadow-md hover:bg-gray-400 transition duration-150">
+                        <i data-lucide="log-out" class="w-5 h-5 mr-2"></i> Exit to Tutorials
+                    </button>
+                </section>
+            `;
+        }
+
+        // Generic advancement for quiz-style games
+        function completeGenericQuiz(isCorrect, topic) {
+            const score = isCorrect ? 100 : 50; // Simple pass/fail score
+            advanceGameLevel(topic, score);
+        }
+        
+        // --- 1. PHISHING & SCAMS (Simulation Game) ---
+        // (Content definitions and logic kept, as it's the best simulation for Phishing)
+
+        const phishingLevels = {
+            1: { title: "L1: Simple SMS/WhatsApp Scam", prompt: "A WhatsApp message from an unknown number: 'URGENT!! You have won R10,000! Click here to claim: tiny.url/claimprize' Which element is the biggest red flag?", type: 'sms' },
+            2: { title: "L2: Vague Phishing Email", prompt: "Email subject: 'Account Alert Notification: Immediate Action Required.' Sender: 'billing@micrsoft-support.com'. Which two elements look suspicious?", type: 'email' },
+            3: { title: "L3: Spear Phishing (Internal)", prompt: "Email from 'CEO's Assistant' asking you to purchase R5,000 in gift cards urgently for a client meeting. Which element is the biggest red flag?", type: 'email' },
+            4: { title: "L4: Vishing (Voice Scam)", prompt: "A friendly call claims to be your internet provider, says they need your password to 'fix the connection remotely'. What is the safest response?", type: 'vishing' },
+            5: { 
+                title: "L5: Final Quiz: Advanced Phishing", 
+                prompt: "Which method is the hardest to defend against without specialized training?", 
+                type: 'quiz',
+                options: ['Bulk email scams.', 'Vishing/Voice scams.', 'Spear phishing targeting executives.', 'SMS/Smishing attacks.'],
+                correct: 3
+            },
+        };
+
+        function setupPhishingGame(level) {
+            const levelData = phishingLevels[level];
+            const analysisBox = document.getElementById('phish-analysis');
+            if (!analysisBox) return;
+            
+            showGameFeedback('phish-analysis', `Analyze the scenario for Level ${level}. Choose the correct action or click the suspicious element.`, false);
+
+            if (levelData.type === 'vishing' || levelData.type === 'qr') {
+                const isVishing = levelData.type === 'vishing';
+                document.getElementById('phishing-options').innerHTML = `
+                    <button class="py-3 bg-red-100 text-red-700 font-semibold rounded-xl hover:bg-red-200 transition duration-150" onclick="showGameFeedback('phish-analysis', 'Incorrect. Never give credentials or rush decisions.', false)">${isVishing ? 'Give password and access.' : 'Scan it to verify.'}</button>
+                    <button class="py-3 bg-green-100 text-green-700 font-semibold rounded-xl hover:bg-green-200 transition duration-150" onclick="completeGenericQuiz(true, 'Phishing & Scams')">${isVishing ? 'Hang up and call the official support line back.' : 'Report the suspicious sign to bank staff.'}</button>
+                    <button onclick="completeGenericQuiz(true, 'Phishing & Scams')" class="w-full mt-4 py-3 bg-green-600 text-white font-bold rounded-xl shadow-md hover:bg-green-700 transition duration-150 flex items-center justify-center">
+                        <i data-lucide="award" class="w-5 h-5 mr-2"></i> Submit Analysis (Pass Level)
+                    </button>
+                `;
+            } else if (levelData.type === 'quiz') {
+                 return;
+            } else {
+                 document.getElementById('phishing-options').innerHTML = `
+                    <p class="text-sm text-gray-500">Click the elements in the prompt to analyze them:</p>
+                    <button class="py-2 px-4 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition duration-150" onclick="showGameFeedback('phish-analysis', 'Correct: Urgency and high reward are classic scam tactics.', true)">Analyze Urgency/Prize</button>
+                    <button class="py-2 px-4 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition duration-150" onclick="showGameFeedback('phish-analysis', 'Correct: A shortened or misspelled URL is a major red flag.', true)">Analyze Link/URL</button>
+                    <button class="py-2 px-4 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition duration-150" onclick="showGameFeedback('phish-analysis', 'Incorrect: While context matters, the link and urgency are higher threats.', false)">Analyze Tone</button>
+                    <button onclick="completeGenericQuiz(true, 'Phishing & Scams')" class="w-full mt-4 py-3 bg-green-600 text-white font-bold rounded-xl shadow-md hover:bg-green-700 transition duration-150 flex items-center justify-center">
+                        <i data-lucide="award" class="w-5 h-5 mr-2"></i> Submit Analysis (Pass Level)
+                    </button>
+                 `;
+            }
+        }
+
+        function getPhishingGameContent(topic, level) {
+            if (level > MAX_LEVEL) { return getModuleCompletedContent(topic); }
+            const levelData = phishingLevels[level];
+            if (level === MAX_LEVEL) {
+                 const quizOptions = levelData.options.map((option, index) => {
+                    const optionNumber = index + 1;
+                    const isCorrect = optionNumber === levelData.correct;
+                    return `<button class="py-3 bg-gray-100 text-gray-800 font-semibold rounded-xl hover:bg-gray-200 transition duration-150 w-full text-left px-4" 
+                                onclick="showGameFeedback('phish-quiz-feedback', '${isCorrect ? 'Correct! Spear phishing uses highly specific personal info, making it harder to spot.' : 'Incorrect. Try again or exit to review the game levels.'}', ${isCorrect}); 
+                                ${isCorrect ? `setTimeout(() => advanceGameLevel('${topic}', 100), 1000)` : ''}">${optionNumber}. ${option}</button>`;
+                }).join('');
+                 return `<section class="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.title}</h3><p class="text-gray-600">${levelData.prompt}</p>
+                        <div id="phish-quiz-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">Select the best answer below.</div>
+                        <div class="grid grid-cols-1 gap-3">${quizOptions}</div></section>`;
+            }
+            return `<p class="text-gray-600 mb-6">Scenario: ${levelData.prompt}</p>
+                <section class="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                    <h4 class="text-lg font-semibold text-gray-800">Your Task: Identify the Threat</h4>
+                    <div id="phish-analysis" class="p-4 bg-red-100 border border-red-300 rounded-xl text-sm text-red-800 shadow-md h-32 flex items-center justify-center">
+                        <p>Analyze the scenario for Level ${level}. Choose the correct action or click the suspicious element.</p>
+                    </div>
+                    <div id="phishing-options" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                </section>`;
+        }
+        
+        // --- 2. PASSWORD SAFETY (Interactive Input Game) ---
+        // (Logic kept as is, since it's the perfect game for this topic)
+
+        const passwordLevels = {
+            1: { minLength: 8, complexity: 'basic', targetScore: 50, prompt: 'L1: Build a password over 8 characters.' },
+            2: { minLength: 10, complexity: 'mixedCase', targetScore: 75, prompt: 'L2: Require 10+ characters, mixed case, and at least one number.' },
+            3: { minLength: 12, complexity: 'symbols', targetScore: 100, prompt: 'L3: Require 12+ characters, mixed case, numbers, and symbols.' },
+            4: { minLength: 15, complexity: 'passphrase', targetScore: 100, prompt: 'L4: Build a long passphrase (15+ chars) and simulate a password manager backup.' },
+            5: { 
+                title: "L5: Final Quiz: MFA and Best Practices", 
+                prompt: "Which one provides the highest level of account security?", 
+                type: 'quiz',
+                options: ['Long, complex password only.', 'Password + Multi-Factor Authentication (MFA).'],
+                correct: 2
+            },
+        };
+
+        function checkPasswordStrength() {
+            const topic = 'Password Safety';
+            const level = moduleProgress[topic]?.level || 1;
+            const levelData = passwordLevels[level];
+            const input = document.getElementById('password-input')?.value || '';
+            const scoreMeter = document.getElementById('strength-meter');
+            const scoreText = document.getElementById('password-score');
+            const strengthText = document.getElementById('strength-text');
+            const feedbackList = document.getElementById('feedback-list');
+            const submitButton = document.getElementById('password-submit-btn');
+
+            if (!scoreMeter || !scoreText || !strengthText || !feedbackList || !submitButton) return;
+
+            let strength = 0;
+            let feedback = [];
+            let requiredChecksMet = 0;
+            let totalRequiredChecks = 1;
+
+            // --- 1. Length Check ---
+            const lenReq = levelData.minLength;
+            if (input.length >= lenReq) { strength += 25; requiredChecksMet++; feedback.push({ check: true, text: `Minimum ${lenReq} characters achieved.` }); } 
+            else { feedback.push({ check: false, text: `Minimum ${lenReq} characters needed (currently ${input.length}).` }); }
+
+            // --- 2. Mixed Case Check (Required for L2+) ---
+            const hasMixedCase = (/[a-z]/.test(input) && /[A-Z]/.test(input));
+            if (level >= 2) {
+                totalRequiredChecks++;
+                if (hasMixedCase) { strength += 25; requiredChecksMet++; feedback.push({ check: true, text: 'Used a mix of upper and lower case letters.' }); } 
+                else { feedback.push({ check: false, text: 'Use a mix of upper and lower case letters.' }); }
+            }
+
+            // --- 3. Numbers Check (Required for L2+) ---
+            const hasNumbers = /\d/.test(input);
+            if (level >= 2) {
+                totalRequiredChecks++;
+                if (hasNumbers) { strength += 25; requiredChecksMet++; feedback.push({ check: true, text: 'Added numbers (0-9).' }); } 
+                else { feedback.push({ check: false, text: 'Add numbers (0-9).' }); }
+            }
+
+            // --- 4. Symbols Check (Required for L3+) ---
+            const hasSymbols = /[^a-zA-Z0-9\s]/.test(input);
+            if (level >= 3) {
+                totalRequiredChecks++;
+                if (hasSymbols) { strength += 25; requiredChecksMet++; feedback.push({ check: true, text: 'Included unique symbols (@, #, $, !).' }); } 
+                else { feedback.push({ check: false, text: 'Include unique symbols (@, #, $, !).' }); }
+            }
+            
+            // --- Determine Final Strength and Status ---
+            strength = Math.min(100, strength); 
+            let colorClass = '';
+            let statusText = '';
+            const isReadyToAdvance = (requiredChecksMet === totalRequiredChecks) && input.length > 0;
+            
+            if (input.length === 0) { 
+                strength = 0; colorClass = 'bg-gray-400'; statusText = 'Strength: Empty';
+                feedback = [ { check: false, text: `Minimum ${lenReq} characters needed.` }, { check: false, text: 'Use a mix of upper and lower case letters (L2+).' }, { check: false, text: 'Add numbers (0-9) (L2+).' }, { check: false, text: 'Include unique symbols (@, #, $, !) (L3+).' } ]; 
+            } else if (strength < 50) { 
+                colorClass = 'bg-red-500'; statusText = 'Strength: Weak'; 
+            } else if (strength < 75) { 
+                colorClass = 'bg-orange-400'; statusText = 'Strength: Moderate'; 
+            } else if (strength < 100) { 
+                colorClass = 'bg-accent'; statusText = 'Strength: Good'; 
+            } else { 
+                colorClass = 'bg-green-500'; statusText = 'Strength: Excellent'; 
+            }
+
+            // Update visuals
+            scoreMeter.style.width = `${strength}%`;
+            scoreText.textContent = `${strength}%`;
+            scoreMeter.className = `h-3 rounded-full transition-all duration-500 ${colorClass}`;
+            strengthText.textContent = statusText;
+            
+            feedbackList.innerHTML = feedback.map(item => `
+                <li class="flex items-center text-sm text-gray-700">
+                    <i data-lucide="${item.check ? 'check-circle' : 'x-circle'}" class="w-4 h-4 mr-2 ${item.check ? 'text-green-500' : 'text-red-500'}"></i>
+                    <span>${item.text}</span>
+                </li>
+            `).join('');
+
+            submitButton.classList.toggle('hidden', !isReadyToAdvance);
+            lucide.createIcons();
+        }
+        
+        function completePasswordGame() {
+            const topic = 'Password Safety';
+            const level = moduleProgress[topic]?.level || 1;
+            
+            // Simplified check based on requiredChecksMet from checkPasswordStrength
+            // We assume if the button is visible, the complexity check passed.
+            const passedLevel = true;
+            advanceGameLevel(topic, passedLevel ? 100 : 50);
+        }
+
+        function getPasswordGameContent(topic, level) {
+            if (level > MAX_LEVEL) { return getModuleCompletedContent(topic); }
+            const levelData = passwordLevels[level];
+            if (level === MAX_LEVEL) {
+                 const quizOptions = levelData.options.map((option, index) => {
+                    const optionNumber = index + 1;
+                    const isCorrect = optionNumber === levelData.correct;
+                    return `<button class="py-3 bg-gray-100 text-gray-800 font-semibold rounded-xl hover:bg-gray-200 transition duration-150 w-full text-left px-4" 
+                                onclick="showGameFeedback('password-quiz-feedback', '${isCorrect ? 'Correct! MFA stops attackers even if they steal your password.' : 'Incorrect. Review the game and concepts first.'}', ${isCorrect}); 
+                                ${isCorrect ? `setTimeout(() => advanceGameLevel('${topic}', 100), 1000)` : ''}">${optionNumber}. ${option}</button>`;
+                }).join('');
+
+                 return `<section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.title}</h3><p class="text-gray-600">${levelData.prompt}</p>
+                        <div id="password-quiz-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">Select the best answer.</div>
+                         <div class="grid grid-cols-1 gap-3">${quizOptions}</div>
+                    </section>`;
+            }
+            
+            return `
+                <section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.prompt}</h3>
+                        <p class="text-gray-600">Level ${level} requirements: Min length ${levelData.minLength}, enforced complexity: **${levelData.complexity}**.</p>
+                        <div class="space-y-3">
+                            <input type="text" id="password-input" oninput="checkPasswordStrength()" placeholder="Enter your challenge password here..." class="w-full p-4 border-2 border-primary/20 rounded-xl text-lg focus:ring-primary focus:border-primary transition duration-150">
+                            <div id="strength-meter-container" class="w-full bg-gray-200 rounded-full h-3">
+                                <div id="strength-meter" class="h-3 rounded-full transition-all duration-500" style="width: 0%; background-color: #f87171;"></div>
+                            </div>
+                            <p id="strength-text" class="text-sm font-semibold text-gray-500">Strength: Too Short</p>
+                        </div>
+                        <div class="p-4 bg-primary/5 rounded-xl border border-primary/10 space-y-2">
+                            <div class="flex justify-between items-center font-bold text-gray-800">
+                                <span>Current Score:</span>
+                                <span id="password-score" class="text-2xl text-primary">0%</span>
+                            </div>
+                            <ul id="feedback-list" class="text-sm space-y-1 text-gray-700"></ul>
+                        </div>
+                        <button id="password-submit-btn" onclick="completePasswordGame()" class="hidden w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-md hover:bg-green-700 transition duration-150 flex items-center justify-center">
+                            <i data-lucide="award" class="w-5 h-5 mr-2"></i> Submit Password & Advance Level
+                        </button>
+                    </div>
+                    <div class="lg:col-span-1 bg-white p-4 rounded-xl space-y-4 border border-gray-200">
+                        <h4 class="font-bold text-lg text-gray-800 flex items-center"><i data-lucide="lightbulb" class="w-5 h-5 mr-2 text-amber-500"></i> Password Tips</h4>
+                        <p class="text-sm text-gray-600">Use memorable phrases and substitute letters with symbols/numbers to meet the level requirements!</p>
+                        <div class="text-xs font-mono bg-gray-100 p-3 rounded-lg border">
+                            Example: MyDogLovesBiltong -> MydogL0v3sB!lt0ng
+                        </div>
+                    </div>
+                </section>`;
+        }
+
+        // --- 3. SAFE BROWSING (URL Filter Bounce Game) ---
+
+        const browsingLevels = {
+            1: { prompt: "L1: Protocol Check. Filter only HTTPS links. Time limit: 15s.", speed: 1000 },
+            2: { prompt: "L2: Domain Check. Filter official banking domains, reject misspellings. Time limit: 12s.", speed: 800 },
+            3: { prompt: "L3: Mixed Check. Filter secure protocols and trusted TLDs (.co.za). Time limit: 10s.", speed: 600 },
+            4: { prompt: "L4: Continuous Filtering. Maintain 80% accuracy for 20 seconds. Faster falling items.", speed: 400 },
+            5: { 
+                title: "L5: Final Quiz: Browsing Defense", 
+                prompt: "Which measure provides the best defense against malicious browser extensions?", 
+                type: 'quiz',
+                options: ['Using incognito mode.', 'Only installing extensions from the official store and checking permissions.', 'Using a firewall.'],
+                correct: 2
+            },
+        };
+
+        let bounceGameState = { score: 0, requiredScore: 5, hits: 0, misses: 0, level: 1, topic: 'Safe Browsing', maxTime: 15 };
+
+        function updateBounceScoreboard() {
+            document.getElementById('bounce-score').textContent = bounceGameState.hits;
+            document.getElementById('bounce-misses').textContent = bounceGameState.misses;
+            document.getElementById('bounce-timer').textContent = bounceGameState.maxTime;
+        }
+
+        function handleObjectClick(element, isSafe) {
+            if (isSafe) {
+                if (element.classList.contains('safe')) {
+                    bounceGameState.hits++;
+                    element.remove();
+                    showGameFeedback('bounce-feedback', 'Correct! Safe URL accepted.', true);
+                } else {
+                    bounceGameState.misses++;
+                    element.remove();
+                    showGameFeedback('bounce-feedback', 'Incorrect! Filter failed.', false);
+                }
+            } else {
+                if (element.classList.contains('phish')) {
+                    bounceGameState.hits++; // Correctly ignored/filtered
+                    element.remove();
+                    showGameFeedback('bounce-feedback', 'Correct! Phishing URL rejected.', true);
+                } else {
+                    bounceGameState.misses++;
+                    element.remove();
+                    showGameFeedback('bounce-feedback', 'Incorrect! Filter failed.', false);
+                }
+            }
+
+            if (bounceGameState.hits >= bounceGameState.requiredScore) {
+                // Game Win Condition
+                if (gameTimer) clearTimeout(gameTimer);
+                showGameFeedback('bounce-feedback', `Level ${bounceGameState.level} Passed! Advancing...`, true);
+                setTimeout(() => advanceGameLevel(bounceGameState.topic, 100), 1000);
+            } else if (bounceGameState.misses >= 3) {
+                 // Game Loss Condition
+                if (gameTimer) clearTimeout(gameTimer);
+                showGameFeedback('bounce-feedback', 'Level Failed. Too many misses (3). Review tips and retry!', false);
+            }
+
+            updateBounceScoreboard();
+        }
+        
+        function setupBounceGame(level) {
+            const topic = 'Safe Browsing';
+            const levelData = browsingLevels[level];
+            const gameArea = document.getElementById('bounce-game-area');
+            if (!gameArea) return;
+
+            bounceGameState.level = level;
+            bounceGameState.requiredScore = level * 2 + 3; // 5, 7, 9, 11 hits needed
+            bounceGameState.maxTime = 20 + (5 - level) * 5; // 40s down to 20s
+            bounceGameState.hits = 0;
+            bounceGameState.misses = 0;
+
+            updateBounceScoreboard();
+            showGameFeedback('bounce-feedback', 'Game Started! Filter links by clicking them.', true);
+
+            const safeUrls = ['https://secure.fnb.co.za', 'https://capitecbank.com', 'https://eskom.co.za'];
+            const phishUrls = ['http://login-auth.xyz', 'https://fnb.co.za.verify.com', 'http://eskom-notice.net'];
+
+            function createFallingObject() {
+                // Ensure game hasn't ended before creating new object
+                if (bounceGameState.misses >= 3 || bounceGameState.hits >= bounceGameState.requiredScore) return;
+
+                const isSafe = Math.random() > 0.5;
+                const url = isSafe ? safeUrls[Math.floor(Math.random() * safeUrls.length)] : phishUrls[Math.floor(Math.random() * phishUrls.length)];
+                
+                const element = document.createElement('div');
+                element.textContent = url;
+                element.className = `falling-object absolute top-0 w-48 text-center p-2 rounded-xl text-xs font-mono shadow-md cursor-pointer ${isSafe ? 'bg-green-600 safe' : 'bg-red-600 phish'}`;
+                element.style.left = `${Math.random() * (gameArea.clientWidth - 100)}px`;
+                element.style.animationDuration = `${4 - (level * 0.5)}s`;
+
+                element.onclick = () => handleObjectClick(element, isSafe);
+
+                gameArea.appendChild(element);
+
+                // Remove element if it passes the bottom
+                setTimeout(() => {
+                    if (element.parentNode) {
+                        element.remove();
+                        // Only count a miss if the game is still active
+                        if (bounceGameState.misses < 3 && bounceGameState.hits < bounceGameState.requiredScore) {
+                            bounceGameState.misses++;
+                            updateBounceScoreboard();
+                            showGameFeedback('bounce-feedback', `Warning: Missed a ${isSafe ? 'safe' : 'phishing'} link!`, false);
+                        }
+
+                        if (bounceGameState.misses >= 3) {
+                            if (gameTimer) clearTimeout(gameTimer);
+                            showGameFeedback('bounce-feedback', 'Level Failed. Too many misses (3). Review tips and retry!', false);
+                        }
+                    }
+                }, (4 - (level * 0.5)) * 1000);
+            }
+
+            function gameLoop() {
+                // Only loop if game is active
+                if (bounceGameState.misses < 3 && bounceGameState.hits < bounceGameState.requiredScore) {
+                    createFallingObject();
+                    gameTimer = setTimeout(gameLoop, levelData.speed); // Controls spawn speed based on level
+                }
+            }
+
+            // Start game timer
+            const initialTime = bounceGameState.maxTime;
+            let currentTime = initialTime;
+            const timerDisplay = document.getElementById('bounce-timer');
+
+            function startCountdown() {
+                if (currentTime <= 0) {
+                    if (gameTimer) clearTimeout(gameTimer);
+                    showGameFeedback('bounce-feedback', 'Time Out! Try to react faster.', false);
+                    return;
+                }
+                timerDisplay.textContent = currentTime;
+                currentTime--;
+                // Continue countdown only if game is active
+                if (bounceGameState.misses < 3 && bounceGameState.hits < bounceGameState.requiredScore) {
+                    gameTimer = setTimeout(startCountdown, 1000);
+                }
+            }
+
+            // Start the fall simulation after a short delay
+            setTimeout(() => {
+                gameLoop();
+                startCountdown();
+            }, 1000);
+        }
+
+        function getSafeBrowsingGameContent(topic, level) {
+            if (level > MAX_LEVEL) { return getModuleCompletedContent(topic); }
+            const levelData = browsingLevels[level];
+            
+            if (level === MAX_LEVEL) {
+                 const quizOptions = levelData.options.map((option, index) => {
+                    const optionNumber = index + 1;
+                    const isCorrect = optionNumber === levelData.correct;
+                    return `<button class="py-3 bg-gray-100 text-gray-800 font-semibold rounded-xl hover:bg-gray-200 transition duration-150 w-full text-left px-4" 
+                                onclick="showGameFeedback('browsing-quiz-feedback', '${isCorrect ? 'Correct! Scrutinizing permissions is key.' : 'Incorrect. Extensions can capture all your browsing data.'}', ${isCorrect}); 
+                                ${isCorrect ? `setTimeout(() => advanceGameLevel('${topic}', 100), 1000)` : ''}">${optionNumber}. ${option}</button>`;
+                }).join('');
+
+                 return `<section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.title}</h3><p class="text-gray-600">${levelData.prompt}</p>
+                        <div id="browsing-quiz-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">Select the best answer.</div>
+                         <div class="grid grid-cols-1 gap-3">${quizOptions}</div>
+                    </section>`;
+            }
+
+
+            return `
+                <section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-4">
+                    <h3 class="text-xl font-bold text-gray-800">${levelData.prompt}</h3>
+                    <div class="flex justify-between items-center bg-white p-3 rounded-xl shadow-md border border-gray-200">
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="zap" class="w-4 h-4 text-accent mr-2"></i> Hits: <span id="bounce-score" class="ml-1 font-bold text-accent">0</span></div>
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="x-circle" class="w-4 h-4 text-red-500 mr-2"></i> Misses: <span id="bounce-misses" class="ml-1 font-bold text-red-500">0 / 3</span></div>
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="timer" class="w-4 h-4 text-primary mr-2"></i> Time Left: <span id="bounce-timer" class="ml-1 font-bold">--</span>s</div>
+                    </div>
+
+                    <div id="bounce-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">
+                        Click START GAME to begin. Hit ${bounceGameState.requiredScore} links before 3 misses or time runs out!
+                    </div>
+
+                    <div id="bounce-game-area" class="bounce-game-area">
+                        <!-- Falling objects will be injected here -->
+                    </div>
+
+                    <p class="text-xs text-center text-gray-500 pt-2">Tip: Click the link/URL as it falls to check and filter it instantly. Filter = click!</p>
+                </section>
+            `;
+        }
+        
+        // --- 4. SOCIAL ENGINEERING (Trust Trap Card Game) ---
+
+        const socialLevels = {
+            1: { prompt: "L1: Urgent IT Call. A caller demands your password to 'fix a virus'.", trap: 'Urgency & Authority', defense: 'Verification Call' },
+            2: { prompt: "L2: 'Friend in need' Scam. A WhatsApp message from a friend asks you to urgently send money.", trap: 'Emotional Appeal', defense: 'Secondary Channel Verification' },
+            3: { prompt: "L3: Tech Support Scam. An unsolicited pop-up says your PC has been infected.", trap: 'Fear & Technicality', defense: 'Ignore & Scan' },
+            4: { prompt: "L4: Fake Survey. A site offers R500 voucher if you enter your ID number and address.", trap: 'Bait (Reward)', defense: 'Zero-Trust Data Policy' },
+            5: { 
+                title: "L5: Final Quiz: Manipulation Tactics", 
+                prompt: "Which technique is MOST effective against social engineering?", 
+                type: 'quiz',
+                options: ['Using a VPN.', 'Implementing a Zero-Trust verification policy.', 'Having a strong password.'],
+                correct: 2
+            },
+        };
+
+        let socialGameState = { cards: [], selectedCard: null, matches: 0, level: 1 };
+
+        function setupSocialGame(level) {
+            const topic = 'Social Engineering';
+            const levelData = socialLevels[level];
+            const traps = [levelData.trap];
+            const defenses = [levelData.defense];
+            const allCards = [];
+            
+            // Add decoy traps/defenses for higher levels
+            if (level >= 2) traps.push('Fake Urgency');
+            if (level >= 3) defenses.push('Physical Hang-up');
+            if (level === 4) traps.push('Financial Loss Threat');
+
+            // Generate card pairs
+            traps.forEach(t => allCards.push({ text: t, type: 'trap', matched: false }));
+            defenses.forEach(d => allCards.push({ text: 'Defense: ' + d, type: 'defense', matched: false, pairId: t })); // Use trap as pairId
+            
+            // Shuffle and limit to 8 cards total (4 pairs)
+            socialGameState.cards = [];
+            // Simplified pairing: use the prompt's trap and defense as the core pair, add decoys
+            const corePair = { trap: levelData.trap, defense: levelData.defense };
+            const decoyTraps = ['Fake Urgency', 'Bait (Reward)', 'Financial Loss Threat'].filter(t => t !== corePair.trap).slice(0, 2);
+            const decoyDefenses = ['Ignore & Scan', 'Verification Call', 'Secondary Channel Verification'].filter(d => d !== corePair.defense).slice(0, 2);
+
+            const allPairs = [
+                { trap: corePair.trap, defense: corePair.defense },
+                { trap: decoyTraps[0], defense: decoyDefenses[0] },
+                { trap: decoyTraps[1], defense: decoyDefenses[1] }
+            ];
+
+            // Filter for exact number of cards (e.g., L1 has 2 pairs, L4 has 4 pairs)
+            const requiredPairs = levelData.matches;
+            
+            let currentCards = [];
+            for (let i = 0; i < requiredPairs; i++) {
+                currentCards.push(
+                    { id: Math.random(), text: allPairs[i].trap, type: 'trap', matched: false, pairId: allPairs[i].trap },
+                    { id: Math.random(), text: 'Defense: ' + allPairs[i].defense, type: 'defense', matched: false, pairId: allPairs[i].trap }
+                );
+            }
+
+            socialGameState.cards = currentCards;
+            socialGameState.cards.sort(() => Math.random() - 0.5);
+            socialGameState.selectedCard = null;
+            socialGameState.matches = 0;
+            
+            renderSocialCards();
+            showGameFeedback('social-feedback', `Match the **TRAP** card (Red) to the correct **DEFENSE** card (Green).`, false);
+        }
+
+        function renderSocialCards() {
+            const cardContainer = document.getElementById('social-card-container');
+            if (!cardContainer) return;
+
+            cardContainer.innerHTML = socialGameState.cards.map(card => `
+                <div id="card-${card.id}" 
+                     class="game-card game-card-${card.type} rounded-xl shadow-lg border-4 
+                     ${card.type === 'trap' ? 'bg-red-200 border-red-400' : 'bg-green-200 border-green-400'} 
+                     ${card.matched ? 'opacity-30' : 'hover:shadow-xl'}
+                     ${socialGameState.selectedCard && socialGameState.selectedCard.id === card.id ? 'scale-110 ring-4 ring-yellow-500' : ''}"
+                     onclick="${card.matched ? '' : `handleCardClick(${card.id})`}">
+                    ${card.text}
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function handleCardClick(cardId) {
+            const topic = 'Social Engineering';
+            const clickedCard = socialGameState.cards.find(c => c.id === cardId);
+            const element = document.getElementById(`card-${cardId}`);
+
+            if (!clickedCard || clickedCard.matched) return;
+            
+            if (!socialGameState.selectedCard) {
+                // First card selected
+                socialGameState.selectedCard = clickedCard;
+                renderSocialCards(); // Rerender to show ring
+                showGameFeedback('social-feedback', `Selected: ${clickedCard.text}. Now find its match.`, true);
+            } else if (socialGameState.selectedCard.id === clickedCard.id) {
+                // Deselect same card
+                socialGameState.selectedCard = null;
+                renderSocialCards(); // Rerender to remove ring
+                showGameFeedback('social-feedback', 'Card deselected. Select a new pair.', false);
+            } else {
+                // Second card selected - check match
+                const firstCard = socialGameState.selectedCard;
+
+                if (firstCard.pairId === clickedCard.pairId && firstCard.type !== clickedCard.type) {
+                    // MATCH SUCCESS!
+                    clickedCard.matched = true;
+                    firstCard.matched = true;
+                    socialGameState.matches++;
+
+                    // Clear selection and styling
+                    socialGameState.selectedCard = null;
+
+                    renderSocialCards(); // Re-render to fade matched cards
+                    showGameFeedback('social-feedback', `MATCH! ${firstCard.pairId} correctly matched to its defense.`, true);
+
+                    if (socialGameState.matches === socialGameState.cards.length / 2) {
+                        // All matches found
+                        showGameFeedback('social-feedback', `LEVEL ${socialGameState.level} COMPLETE! All traps identified.`, true);
+                        setTimeout(() => advanceGameLevel(topic, 100), 1000);
+                    }
+                } else {
+                    // MATCH FAIL!
+                    element.classList.add('scale-110', 'ring-4', 'ring-red-500');
+                    showGameFeedback('social-feedback', 'MISMATCH! The type or pair ID is incorrect. Try again.', false);
+                    
+                    // Reset selection after delay
+                    const firstElement = document.getElementById(`card-${firstCard.id}`);
+                    setTimeout(() => {
+                        element.classList.remove('scale-110', 'ring-4', 'ring-red-500');
+                        socialGameState.selectedCard = null;
+                        renderSocialCards(); // Re-render to clear highlighting
+                    }, 800);
+                }
+            }
+        }
+
+        function getSocialEngineeringGameContent(topic, level) {
+            if (level > MAX_LEVEL) { return getModuleCompletedContent(topic); }
+            const levelData = socialLevels[level];
+            
+            if (level === MAX_LEVEL) {
+                 const quizOptions = levelData.options.map((option, index) => {
+                    const optionNumber = index + 1;
+                    const isCorrect = optionNumber === levelData.correct;
+                    return `<button class="py-3 bg-gray-100 text-gray-800 font-semibold rounded-xl hover:bg-gray-200 transition duration-150 w-full text-left px-4" 
+                                onclick="showGameFeedback('social-quiz-feedback', '${isCorrect ? 'Correct! Zero Trust means verifying *everyone* every time.' : 'Incorrect. Review the principles of verification.'}', ${isCorrect}); 
+                                ${isCorrect ? `setTimeout(() => advanceGameLevel('${topic}', 100), 1000)` : ''}">${optionNumber}. ${option}</button>`;
+                }).join('');
+
+                 return `<section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.title}</h3><p class="text-gray-600">${levelData.prompt}</p>
+                        <div id="social-quiz-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">Select the best answer.</div>
+                         <div class="grid grid-cols-1 gap-3">${quizOptions}</div>
+                    </section>`;
+            }
+
+            return `
+                <section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                    <h3 class="text-xl font-bold text-gray-800">${levelData.prompt}</h3>
+                    <div class="flex justify-between items-center bg-white p-3 rounded-xl shadow-md border border-gray-200">
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="shuffle" class="w-4 h-4 text-primary mr-2"></i> Matches Found: <span id="social-score" class="ml-1 font-bold text-primary">0</span> / 4</div>
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="shield-check" class="w-4 h-4 text-green-500 mr-2"></i> Target: Match all pairs.</div>
+                    </div>
+
+                    <div id="social-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center mb-4">
+                        Match the TRAP (Red) card to the DEFENSE (Green) card.
+                    </div>
+
+                    <div id="social-card-container" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <!-- Cards injected by setupSocialGame -->
+                    </div>
+
+                    <p class="text-xs text-center text-gray-500 pt-2">Tip: Verification is key. Never rely on the source that is making the unusual request.</p>
+                </section>`;
+        }
+        
+        // --- 5. RANSOMWARE & MALWARE (Data Defense Block Game) ---
+
+        const ransomwareLevels = {
+            1: { prompt: "L1: Infection Detected! Your files are encrypted. What is your FIRST immediate action?", blocks: 4, timer: 15000 },
+            2: { prompt: "L2: Data Recovery. You have offline backups. What is the next step AFTER disconnecting the internet?", blocks: 6, timer: 12000 },
+            3: { prompt: "L3: Prevention. Which browser setting best prevents accidental downloads of malware?", blocks: 8, timer: 10000 },
+            4: { prompt: "L4: Worms vs Viruses. What is the key difference between a computer worm and a Trojan horse?", blocks: 10, timer: 8000 },
+            5: { 
+                title: "L5: Final Quiz: Defense Strategy", 
+                prompt: "If your system is encrypted by ransomware, should you pay the ransom?", 
+                type: 'quiz',
+                options: ['Yes, it is the quickest way to restore data.', 'No, payment funds criminal networks and doesn\'t guarantee data recovery.', 'Only if you have no backups.'],
+                correct: 2
+            },
+        };
+
+        let defenseGameState = { backupsClicked: 0, requiredBlocks: 4, level: 1, topic: 'Ransomware & Malware' };
+
+        function setupRansomwareGame(level) {
+            const topic = defenseGameState.topic;
+            const levelData = ransomwareLevels[level];
+            const gameArea = document.getElementById('defense-game-area');
+            const timerDisplay = document.getElementById('defense-timer');
+            if (!gameArea) return;
+            
+            defenseGameState.requiredBlocks = levelData.blocks;
+            defenseGameState.backupsClicked = 0;
+            
+            gameArea.innerHTML = '';
+            showGameFeedback('defense-feedback', `Level ${level} started! Click all ${levelData.blocks} Backup Points BEFORE the ransom note appears.`, true);
+
+            // Create clickable backup points
+            for (let i = 0; i < levelData.blocks; i++) {
+                const button = document.createElement('button');
+                button.innerHTML = '<i data-lucide="save" class="w-8 h-8"></i><span class="text-xs">BACKUP</span>';
+                button.className = 'absolute p-2 bg-primary text-white rounded-full shadow-lg hover:bg-indigo-700 transition duration-150 transform hover:scale-110';
+                button.style.left = `${Math.random() * 80 + 10}%`;
+                button.style.top = `${Math.random() * 80 + 10}%`;
+                button.onclick = (e) => {
+                    e.stopPropagation();
+                    button.remove();
+                    defenseGameState.backupsClicked++;
+                    document.getElementById('defense-score').textContent = defenseGameState.backupsClicked;
+                    if (defenseGameState.backupsClicked === levelData.blocks) {
+                        if (gameTimer) clearTimeout(gameTimer);
+                        showGameFeedback('defense-feedback', `SUCCESS! All data backed up.`, true);
+                        setTimeout(() => advanceGameLevel(topic, 100), 1000);
+                    }
+                };
+                gameArea.appendChild(button);
+            }
+            lucide.createIcons();
+
+            // Start countdown timer
+            let timeLeft = levelData.timer / 1000;
+            
+            function startCountdown() {
+                if (timeLeft <= 0) {
+                    if (gameTimer) clearTimeout(gameTimer);
+                    gameArea.innerHTML = `<div class="absolute inset-0 bg-red-800 flex items-center justify-center text-white text-3xl font-bold p-4 rounded-xl">RANSOM NOTE: FILES ENCRYPTED! (Level Failed)</div>`;
+                    showGameFeedback('defense-feedback', 'FAILURE! Malware encrypted your files. Too slow.', false);
+                    return;
+                }
+                timerDisplay.textContent = timeLeft;
+                timeLeft--;
+                // Check if game is still active before continuing countdown
+                if (defenseGameState.backupsClicked < levelData.blocks) {
+                    gameTimer = setTimeout(startCountdown, 1000);
+                }
+            }
+
+            // Start the timer
+            gameTimer = setTimeout(startCountdown, 1000);
+        }
+
+        function getRansomwareGameContent(topic, level) {
+            if (level > MAX_LEVEL) { return getModuleCompletedContent(topic); }
+            const levelData = ransomwareLevels[level];
+            
+            if (level === MAX_LEVEL) {
+                 const quizOptions = levelData.options.map((option, index) => {
+                    const optionNumber = index + 1;
+                    const isCorrect = optionNumber === levelData.correct;
+                    return `<button class="py-3 bg-gray-100 text-gray-800 font-semibold rounded-xl hover:bg-gray-200 transition duration-150 w-full text-left px-4" 
+                                onclick="showGameFeedback('ransomware-quiz-feedback', '${isCorrect ? 'Correct! Never fund criminals.' : 'Incorrect. Paying the ransom is a high-risk gamble.'}', ${isCorrect}); 
+                                ${isCorrect ? `setTimeout(() => advanceGameLevel('${topic}', 100), 1000)` : ''}">${optionNumber}. ${option}</button>`;
+                }).join('');
+
+                 return `<section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.title}</h3><p class="text-gray-600">${levelData.prompt}</p>
+                        <div id="ransomware-quiz-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">Select the best answer.</div>
+                         <div class="grid grid-cols-1 gap-3">${quizOptions}</div>
+                    </section>`;
+            }
+
+            return `
+                <section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-4">
+                    <h3 class="text-xl font-bold text-gray-800">Defend Against Malware Attack (Quick Action Drill)</h3>
+                    <p class="text-gray-600">${levelData.prompt}</p>
+
+                    <div class="flex justify-between items-center bg-white p-3 rounded-xl shadow-md border border-gray-200">
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="disc-3" class="w-4 h-4 text-primary mr-2"></i> Backups Saved: <span id="defense-score" class="ml-1 font-bold text-primary">0</span> / ${levelData.blocks}</div>
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="timer" class="w-4 h-4 text-red-500 mr-2"></i> Encryption Countdown: <span id="defense-timer" class="ml-1 font-bold">--</span>s</div>
+                    </div>
+
+                    <div id="defense-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center mb-4">
+                        Click START GAME to begin. Click all Backup Points quickly!
+                    </div>
+
+                    <div id="defense-game-area" class="bounce-game-area bg-gray-900 border-red-500 border-4 relative" style="height: 350px;">
+                        <!-- Backup buttons injected by setupRansomwareGame -->
+                    </div>
+
+                    <p class="text-xs text-center text-gray-500 pt-2">Tip: Identify the most critical defense action (disconnect/backup) under pressure.</p>
+                </section>
+            `;
+        }
+
+        // --- 6. MOBILE SECURITY (Permission Puzzle Game) ---
+
+        const mobileLevels = {
+            1: { prompt: "L1: Basic Permissions. Match 2 basic apps to their essential permissions.", matches: 2, apps: ['Calculator', 'Map App'], permissions: ['Storage', 'Location'] },
+            2: { prompt: "L2: Sensitive Permissions. Match 3 apps to sensitive permissions, avoiding misuse.", matches: 3, apps: ['Camera Filter', 'Social Media', 'Bank App'], permissions: ['Microphone', 'Contacts', 'Biometrics'] },
+            3: { prompt: "L3: External Risks. Match phone settings to public risks (e.g., Public WiFi).", matches: 4, apps: ['Public WiFi', 'Lost Phone', 'Unknown App', 'Bluetooth'], permissions: ['VPN', 'Remote Lock', 'Block Install', 'Turn Off'] },
+            4: { prompt: "L4: Full Audit. Match 5 settings to their highest security level.", matches: 5, apps: ['Screen Lock', 'Updates', 'App Stores', 'MFA', 'Remote Wipe'], permissions: ['Biometric PIN', 'Auto Install', 'Official Only', 'Enable All', 'Setup'] },
+            5: { 
+                title: "L5: Final Quiz: Essential Mobile Practices", 
+                prompt: "Which app should you AVOID downloading from third-party app stores (sideloading)?", 
+                type: 'quiz',
+                options: ['A utility app (e.g., flashlight).', 'Your bank app.', 'A mobile game.'],
+                correct: 2
+            },
+        };
+        
+        let mobileGameState = { matches: 0, requiredMatches: 2, level: 1, topic: 'Mobile Security' };
+
+        function setupMobileGame(level) {
+            const levelData = mobileLevels[level];
+            mobileGameState.requiredMatches = levelData.matches;
+            mobileGameState.matches = 0;
+            mobileGameState.level = level;
+            renderMobilePuzzle();
+            showGameFeedback('mobile-feedback', `Match the ${levelData.matches} Apps/Risks to the correct Defense/Permission.`, true);
+        }
+
+        function renderMobilePuzzle() {
+             const { apps, permissions } = mobileLevels[mobileGameState.level];
+             const appHtml = apps.map((app, index) => `<div id="app-${index}" class="game-card bg-indigo-100 text-indigo-800 border-indigo-400 game-card w-full p-4 rounded-xl shadow-md">${app}</div>`).join('');
+             const permHtml = permissions.map((perm, index) => `<div id="perm-${index}" class="game-card bg-green-100 text-green-800 border-green-400 game-card w-full p-4 rounded-xl shadow-md" onclick="handleMobileMatch('${app}', '${perm}', this, ${index})">${perm}</div>`).join('');
+             
+             document.getElementById('mobile-apps-container').innerHTML = appHtml;
+             document.getElementById('mobile-permissions-container').innerHTML = permHtml;
+             document.getElementById('mobile-score').textContent = mobileGameState.matches;
+        }
+
+        function handleMobileMatch(app, permission, element, permIndex) {
+            const topic = 'Mobile Security';
+            const appNames = mobileLevels[mobileGameState.level].apps;
+            
+            // This simulation requires the user to click the permission card (permIndex) 
+            // that is in the correct matching position (appIndex).
+            const isCorrectMatch = (permIndex === appNames.indexOf(app));
+
+            if (isCorrectMatch) {
+                // SUCCESS
+                mobileGameState.matches++;
+                element.classList.remove('bg-green-100', 'border-green-400', 'hover:shadow-lg');
+                element.classList.add('bg-green-600', 'text-white', 'opacity-50', 'cursor-default');
+                element.onclick = null; // Disable further clicks
+                
+                const appElement = document.getElementById(`app-${permIndex}`);
+                if (appElement) appElement.classList.add('bg-indigo-600', 'text-white', 'opacity-50');
+
+                document.getElementById('mobile-score').textContent = mobileGameState.matches;
+                showGameFeedback('mobile-feedback', `Correct! ${app} requires ${permission}.`, true);
+
+                if (mobileGameState.matches === mobileGameState.requiredMatches) {
+                    showGameFeedback('mobile-feedback', `LEVEL ${mobileGameState.level} COMPLETE! All security settings matched.`, true);
+                    setTimeout(() => advanceGameLevel(topic, 100), 1000);
+                }
+            } else {
+                // FAILURE
+                showGameFeedback('mobile-feedback', `Incorrect match. ${app} does not need ${permission}. Try again.`, false);
+            }
+        }
+
+        function getMobileSecurityGameContent(topic, level) {
+            if (level > MAX_LEVEL) { return getModuleCompletedContent(topic); }
+            const levelData = mobileLevels[level];
+            
+            if (level === MAX_LEVEL) {
+                 const quizOptions = levelData.options.map((option, index) => {
+                    const optionNumber = index + 1;
+                    const isCorrect = optionNumber === levelData.correct;
+                    return `<button class="py-3 bg-gray-100 text-gray-800 font-semibold rounded-xl hover:bg-gray-200 transition duration-150 w-full text-left px-4" 
+                                onclick="showGameFeedback('mobile-quiz-feedback', '${isCorrect ? 'Correct! Banking apps must only come from trusted, official sources.' : 'Incorrect. Banking apps are critical risk.'}', ${isCorrect}); 
+                                ${isCorrect ? `setTimeout(() => advanceGameLevel('${topic}', 100), 1000)` : ''}">${optionNumber}. ${option}</button>`;
+                }).join('');
+
+                 return `<section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-6">
+                        <h3 class="text-xl font-bold text-gray-800">${levelData.title}</h3><p class="text-gray-600">${levelData.prompt}</p>
+                        <div id="mobile-quiz-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center">Select the best answer.</div>
+                         <div class="grid grid-cols-1 gap-3">${quizOptions}</div>
+                    </section>`;
+            }
+
+            return `
+                <section class="bg-gray-50 p-6 rounded-2xl shadow-xl border border-gray-100 space-y-4">
+                    <h3 class="text-xl font-bold text-gray-800">Permission Puzzle Game</h3>
+                    <p class="text-gray-600">${levelData.prompt}</p>
+
+                    <div class="flex justify-between items-center bg-white p-3 rounded-xl shadow-md border border-gray-200">
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="check-circle" class="w-4 h-4 text-green-500 mr-2"></i> Matches: <span id="mobile-score" class="ml-1 font-bold text-green-500">0</span> / ${levelData.matches}</div>
+                        <div class="text-sm font-medium text-gray-700 flex items-center"><i data-lucide="info" class="w-4 h-4 text-primary mr-2"></i> Level: ${level}</div>
+                    </div>
+
+                    <div id="mobile-feedback" class="p-4 bg-white rounded-xl text-sm text-gray-600 font-medium h-20 flex items-center justify-center mb-4">
+                        Click on the Defense/Permission (Right) to match it to the App/Risk (Left).
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div id="mobile-apps-container" class="space-y-3 p-3 border-r-4 border-indigo-500/50 bg-indigo-50 rounded-xl">
+                            <!-- Apps injected here -->
+                        </div>
+                        <div id="mobile-permissions-container" class="space-y-3 p-3 border-l-4 border-green-500/50 bg-green-50 rounded-xl">
+                            <!-- Permissions injected here -->
+                        </div>
+                    </div>
+
+                    <p class="text-xs text-center text-gray-500 pt-2">Tip: Only grant the absolute minimum required permissions!</p>
+                </section>
+            `;
+        }
+
+        // --- STATIC PAGE IMPLEMENTATION (FIXES) ---
+        
+        // --- HOME VIEW RESTORED & FIXED ---
+        function getHomeView() {
+            // Home View is the only one rendered initially without 'hidden'
+            return `
+                <div id="view-home" class="p-4 lg:p-8 space-y-8">
+                    <!-- Welcome & Quick Actions -->
+                    <div class="bg-primary text-white p-6 lg:p-10 rounded-2xl shadow-xl">
+                        <h2 class="text-3xl lg:text-4xl font-extrabold">
+                            Welcome to Ubuntu: Cyber-Safe ZA!
+                        </h2>
+                        <p class="mt-2 text-indigo-200 text-lg">
+                            Your dedicated platform for cybersecurity awareness and media campaigns in South Africa. Stay informed, stay safe.
+                        </p>
+                        <div class="mt-6 flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                            <button onclick="setView('tutorials')" class="bg-accent text-gray-900 px-6 py-3 rounded-xl font-semibold shadow-md hover:bg-cyan-400 transition duration-150 flex items-center justify-center">
+                                <i data-lucide="book-open-check" class="w-5 h-5 mr-2"></i> Start Learning
+                            </button>
+                            <button onclick="setView('threat-map')" class="bg-white/90 text-primary px-6 py-3 rounded-xl font-semibold shadow-md hover:bg-white transition duration-150 flex items-center justify-center">
+                                <i data-lucide="activity" class="w-5 h-5 mr-2"></i> Check Threats
+                            </button>
+                            <button onclick="setView('resources')" class="bg-red-500/90 text-white px-6 py-3 rounded-xl font-semibold shadow-md hover:bg-red-600 transition duration-150 flex items-center justify-center">
+                                <i data-lucide="flag" class="w-5 h-5 mr-2"></i> Report Incident
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Quick Stats/Insights Section -->
+                    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        ${dataVisPlaceholder('12,345', 'Tutorials Completed', 'green', 'check-square')}
+                        ${dataVisPlaceholder('R 1.88B', 'Digital Fraud Loss (2024 SABRIC)', 'red', 'banknote')}
+                        ${dataVisPlaceholder('86% ↑', 'Increase in Digital Fraud Incidents (2024)', 'red', 'arrow-up')}
+                        ${dataVisPlaceholder('High', 'Current National Risk Level', 'red', 'shield-alert')}
+                    </section>
+
+                    <!-- Featured Media Campaign / Alert -->
+                    <section class="bg-white p-6 lg:p-8 rounded-2xl shadow-lg border border-gray-100">
+                        <h3 class="text-2xl font-bold text-gray-900 mb-4">Media Campaign Spotlight: Phishing Fails</h3>
+                        <div class="flex flex-col lg:flex-row gap-6">
+                            <div class="lg:w-2/3 bg-gray-100 rounded-xl overflow-hidden p-6">
+                                <p class="text-gray-600">
+                                    <i data-lucide="play-circle" class="w-6 h-6 inline-block text-primary mr-2"></i>
+                                    **Mock Animated Content Player:** Short animated video (30s) on recognizing fake payment links.
+                                </p>
+                                <div class="h-40 flex items-center justify-center bg-gray-200 rounded-lg mt-3 text-gray-500 font-medium">
+                                    Video Placeholder: "Don't Click That Link!"
+                                </div>
+                            </div>
+                            <div class="lg:w-1/3 space-y-3">
+                                <div class="p-4 rounded-xl bg-red-50 border border-red-200">
+                                    <h4 class="text-lg font-semibold text-red-700 flex items-center">
+                                        <i data-lucide="alert-triangle" class="w-5 h-5 mr-2"></i> Immediate Alert
+                                    </h4>
+                                    <p class="text-sm text-red-600 mt-1">
+                                        New SMS Banking Scam targeting major SA banks detected. **Do not respond** to unexpected verification requests.
+                                    </p>
+                                </div>
+                                <button onclick="setView('alerts')" class="w-full py-2 bg-indigo-50 text-primary font-semibold rounded-xl hover:bg-indigo-100 transition duration-150">
+                                    View All Alerts
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            `;
+        }
+        
+        // --- TUTORIALS VIEW DEFINITION (RESTORED & FIXED) ---
+        function getTutorialsView() {
+            return `
+                <div id="view-tutorials" class="p-4 lg:p-8 space-y-8">
+                    <h2 class="text-3xl font-bold text-gray-900">Interactive Learning Modules & Cyber Challenges</h2>
+                    <p class="text-gray-600">Boost your cyber resilience with these interactive, short-form guides. Track your progress, **test your skills with quizzes**, and master digital safety.</p>
+
+                    <!-- Featured Cyber Challenge/Game Center -->
+                    <section class="bg-white p-6 lg:p-8 rounded-2xl shadow-xl border border-primary/20">
+                        <h3 class="text-2xl font-bold text-gray-900 mb-4 flex items-center text-primary">
+                            <i data-lucide="gamepad" class="w-6 h-6 mr-3"></i> Featured Challenge: Phishing Simulation Quiz
+                        </h3>
+                        <div class="flex flex-col lg:flex-row gap-6 items-center">
+                            <div class="lg:w-2/3 bg-primary/5 rounded-xl p-4 border border-primary/10">
+                                <p class="text-gray-700 font-medium mb-3">
+                                    Test your eye for detail! This challenge progresses through ${MAX_LEVEL} levels of increasing difficulty.
+                                </p>
+                                <div class="flex items-center space-x-4">
+                                    <div class="text-xl font-bold text-gray-900">Current Level: ${moduleProgress['Phishing & Scams'].level > MAX_LEVEL ? MAX_LEVEL : moduleProgress['Phishing & Scams'].level} / ${MAX_LEVEL}</div>
+                                    <span class="text-sm text-green-600 font-semibold">${moduleProgress['Phishing & Scams'].completed ? '<i data-lucide="award" class="w-4 h-4 inline-block mr-1"></i> Completed!' : '<i data-lucide="bar-chart" class="w-4 h-4 inline-block mr-1"></i> In Progress'}</span>
+                                </div>
+                            </div>
+                            <div class="lg:w-1/3 w-full">
+                                <button onclick="launchGame('Phishing & Scams')" class="w-full py-3 bg-accent text-gray-900 font-bold rounded-xl shadow-md hover:bg-cyan-400 transition duration-150 flex items-center justify-center">
+                                    <i data-lucide="play" class="w-5 h-5 mr-2"></i> Continue Challenge
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                    <!-- END Featured SECTION -->
+                    
+                    <h3 class="text-2xl font-bold text-gray-900 mt-8 mb-4">Tutorial Modules</h3>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${renderTutorialCard('Phishing & Scams', 0, 'mail-check')}
+                        ${renderTutorialCard('Password Safety', 0, 'lock')}
+                        ${renderTutorialCard('Safe Browsing', 0, 'globe')}
+                        ${renderTutorialCard('Social Engineering', 0, 'users')}
+                        ${renderTutorialCard('Ransomware & Malware', 0, 'bug')}
+                        ${renderTutorialCard('Mobile Security', 0, 'smartphone')}
+                    </div>
+
+                    <!-- Media Campaign Component: Short Audio Skits -->
+                    <section class="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+                        <h3 class="2xl font-bold text-gray-900 mb-4 flex items-center">
+                            <i data-lucide="volume-2" class="w-6 h-6 text-accent mr-3"></i> Audio Safety Skits
+                        </h3>
+                        <p class="text-gray-600 mb-4">Listen to quick, fun skits to understand common threat scenarios (e.g., "The Urgent Email").</p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="p-3 bg-indigo-50 rounded-xl flex items-center justify-between">
+                                <span>Scam Call Comedy</span>
+                                <button class="text-primary hover:text-indigo-700"><i data-lucide="headset" class="w-5 h-5"></i> Play</button>
+                            </div>
+                            <div class="p-3 bg-indigo-50 rounded-xl flex items-center justify-between">
+                                <span>Strong Passwords Rant</span>
+                                <button class="text-primary hover:text-indigo-700"><i data-lucide="headset" class="w-5 h-5"></a> Play</button>
+                            </div>
+                            <div class="p-3 bg-indigo-50 rounded-xl flex items-center justify-between">
+                                <span>The Suspicious Link</span>
+                                <button class="text-primary hover:text-indigo-700"><i data-lucide="headset" class="w-5 h-5"></i> Play</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            `;
+        }
+        
+        function getThreatMapView() {
+            return `
+                <div id="view-threat-map" class="p-4 lg:p-8 space-y-8">
+                    <h2 class="text-3xl font-bold text-gray-900">SA Cyber Threat Map & Data Visualizations</h2>
+                    <p class="text-gray-600">A data-driven view of simulated cybercrime activity across South Africa, updated in mock real-time. This data drives our educational content.</p>
+
+                    <!-- Map Placeholder -->
+                    <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 p-6">
+                        <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center"><i data-lucide="map-pin" class="w-5 h-5 mr-2 text-primary"></i> Simulated Cybercrime Hotspots (South Africa)</h3>
+                        <div class="h-64 lg:h-96 flex flex-col items-center justify-center bg-gray-200 rounded-xl relative">
+                            <div class="absolute inset-0 bg-cover bg-center opacity-10" style="background-image: url('https://placehold.co/800x600/f3f4f6/374151?text=MAP+OF+SOUTH+AFRICA')"></div>
+                            <div class="absolute top-1/4 left-1/4 w-8 h-8 bg-red-500 rounded-full animate-pulse opacity-70 border-2 border-red-700"></div>
+                            <div class="absolute bottom-1/3 right-1/4 w-6 h-6 bg-red-700 rounded-full opacity-80 border-2 border-red-900"></div>
+                            <div class="absolute top-1/2 left-2/3 w-10 h-10 bg-yellow-500 rounded-full opacity-60 border-2 border-yellow-700"></div>
+                            <p class="text-lg font-semibold text-gray-700 z-10">Dynamic Heat Map Visualization (Mock)</p>
+                            <p class="text-sm text-gray-500 z-10 mt-1">Gauteng, Western Cape showing Elevated Risk</p>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-4 text-sm text-gray-700 font-medium">
+                            <span><span class="inline-block w-3 h-3 rounded-full bg-red-600 mr-1"></span> Critical Risk</span>
+                            <span><span class="inline-block w-3 h-3 rounded-full bg-yellow-500 mr-1"></span> Elevated Risk</span>
+                            <span><span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span> Low Risk</span>
+                        </div>
+                    </div>
+
+                    <!-- Data Dashboard & Trends (Using real-world data points) -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        
+                         <!-- Infostealer / Malware Trend -->
+                        <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+                            <h3 class="text-xl font-bold text-gray-900 mb-4 flex items-center"><i data-lucide="bar-chart-2" class="w-5 h-5 mr-2 text-accent"></i> Key Global Attack Trends</h3>
+                            <div class="h-48 flex items-center justify-center bg-gray-100 rounded-xl text-gray-800 font-medium text-center p-4">
+                                <ul class="list-disc list-inside text-sm text-left mx-auto space-y-1">
+                                    <li>**Infostealer Attempts:** Increased by **58%** globally (Check Point).</li>
+                                    <li>**Multipurpose Malware:** Increased by **45%** globally (Check Point).</li>
+                                    <li>**Vishing (Voice Phishing):** Increased by **442%** by mid-2025 (CrowdStrike).</li>
+                                </ul>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-3">Insight: Social engineering remains the fastest-growing threat, highlighting the critical need for behavioral training modules.</p>
+                        </div>
+                         <!-- Digital Fraud Filter -->
+                        <div class="lg:col-span-1 bg-white p-6 rounded-2xl shadow-lg border border-gray-100 space-y-4">
+                            <h3 class="text-xl font-bold text-gray-900">Digital Banking Fraud (2024 SABRIC)</h3>
+                            <div class="space-y-2">
+                                <p class="text-sm text-red-600 font-semibold flex items-center">
+                                    <i data-lucide="alert-triangle" class="w-4 h-4 mr-2"></i> R1.888 Billion in losses reported.
+                                </p>
+                                <p class="text-sm text-primary font-semibold flex items-center">
+                                    <i data-lucide="arrow-up" class="w-4 h-4 mr-2"></i> 86% increase in incidents year-over-year.
+                                </p>
+                                <p class="text-sm text-gray-600 flex items-center">
+                                    <i data-lucide="smartphone" class="w-4 h-4 mr-2"></i> **Banking Apps** accounted for 65.3% of fraud incidents.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getAlertsView() {
+            return `
+                <div id="view-alerts" class="p-4 lg:p-8 space-y-8">
+                    <h2 class="text-3xl font-bold text-gray-900">Latest Cybersecurity Alerts & Tips</h2>
+                    <p class="text-gray-600">Stay one step ahead of cybercriminals with real-time advisories and proactive safety guidance.</p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Real-time Notifications & Visual Warnings (CRITICAL PANEL) -->
+                        <div class="lg:col-span-1 space-y-6 order-last lg:order-first">
+                             <div class="p-6 bg-red-100 border-4 border-red-500 rounded-2xl shadow-xl animate-pulse">
+                                <h3 class="text-xl font-bold text-red-700 flex items-center mb-3">
+                                    <i data-lucide="shield-alert" class="w-6 h-6 mr-2"></i> CRITICAL WARNING
+                                </h3>
+                                <div class="bg-red-500 rounded-xl p-4 text-white text-base font-medium">
+                                    <i data-lucide="screen-share" class="w-5 h-5 inline-block mr-1"></i>
+                                    **Mock Pop-up:** Mass SMS Scam targeting Vodacom users reported. DO NOT click links referencing a "bill correction."
+                                </div>
+                                <p class="mt-4 text-sm text-red-600 font-semibold">Short audio/visual warning content space included here.</p>
+                            </div>
+                            
+                            <div class="p-6 bg-white rounded-2xl shadow-lg border border-gray-100">
+                                <h3 class="text-xl font-bold text-gray-900 mb-4">Proactive Security Tips</h3>
+                                <ul class="space-y-3">
+                                    <li class="flex items-center text-sm text-gray-700"><i data-lucide="lock" class="w-4 h-4 mr-2 text-green-500"></i> Ensure MFA is enabled on all critical accounts.</li>
+                                    <li class="flex items-center text-sm text-gray-700"><i data-lucide="mail-open" class="w-4 h-4 mr-2 text-yellow-500"></i> Always verify urgent requests via phone call.</li>
+                                    <li class="flex items-center text-sm text-gray-700"><i data-lucide="shield" class="w-4 h-4 mr-2 text-primary"></i> Complete the Phishing Challenge (L1-L4).</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <!-- Alert List -->
+                        <div class="lg:col-span-2 bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 order-first lg:order-last">
+                            <div class="p-4 border-b bg-gray-50">
+                                <h3 class="text-xl font-bold text-gray-900">Recent Notifications</h3>
+                            </div>
+                            <div class="divide-y divide-gray-100 max-h-[600px] overflow-y-auto custom-scroll">
+                                ${renderAlert('Critical Vulnerability in Popular Browser', 'Users are advised to update their Chrome/Firefox browsers immediately to patch a zero-day vulnerability being actively exploited.', 'Nov 14, 2025', 'critical')}
+                                ${renderAlert('Eskom Email Phishing Warning', 'Be cautious of emails impersonating Eskom regarding load shedding schedules that require you to download an attachment.', 'Nov 13, 2025', 'advisory')}
+                                ${renderAlert('Tip: Enable Multi-Factor Authentication (MFA)', 'Always use MFA on your banking, email, and social media accounts. It is the single most effective security measure.', 'Nov 12, 2025', 'tip')}
+                                ${renderAlert('New WhatsApp Scams Detected', 'Cybercriminals are using "family emergency" stories on WhatsApp to solicit immediate EFTs. Verify via a phone call first.', 'Nov 10, 2025', 'advisory')}
+                                ${renderAlert('Critical Server Patch Released', 'All SA government agencies must apply patch KB-4567-2025 immediately to mitigate risk of DDoS attack.', 'Nov 9, 2025', 'critical')}
+                                ${renderAlert('Tip: Back Up Your Data', 'Regular backups protect you against ransomware. Keep a copy on an offline, external drive.', 'Nov 8, 2025', 'tip')}
+                                ${renderAlert('FNB App Update Warning', 'A fake FNB app update is circulating. Only update through the official App Store or Play Store.', 'Nov 7, 2025', 'advisory')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- NEW: CERTIFICATIONS VIEW ---
+        function getCertsView() {
+            return `
+                <div id="view-certs" class="p-4 lg:p-8 space-y-8">
+                    <h2 class="text-3xl font-bold text-gray-900">Certifications & Professional Training</h2>
+                    <p class="text-gray-600">Elevate your skills with professional training and attain recognized cybersecurity certifications.</p>
+
+                    <!-- Featured Certificate Track (Duplicating Featured Challenge Style) -->
+                    <section class="bg-white p-6 lg:p-8 rounded-2xl shadow-xl border border-accent/20">
+                        <h3 class="2xl font-bold text-gray-900 mb-4 flex items-center text-accent">
+                            <i data-lucide="graduation-cap" class="w-6 h-6 mr-3"></i> Featured Track: Certified Digital Safety Officer (CDSO)
+                        </h3>
+                        <div class="flex flex-col lg:flex-row gap-6 items-center">
+                            <div class="lg:w-2/3 bg-accent/5 rounded-xl p-4 border border-accent/10">
+                                <p class="text-gray-700 font-medium mb-3">
+                                    Become a leader in digital defense. This comprehensive track covers governance, risk, compliance, and incident response, tailored for the SA market.
+                                </p>
+                                <div class="flex items-center space-x-4">
+                                    <div class="text-xl font-bold text-green-600">R 8,500</div>
+                                    <span class="text-sm text-gray-600 font-semibold"><i data-lucide="calendar" class="w-4 h-4 inline-block mr-1"></i> Next Cohort: Jan 2026</span>
+                                </div>
+                            </div>
+                            <div class="lg:w-1/3 w-full">
+                                <button class="w-full py-3 bg-primary text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition duration-150 flex items-center justify-center">
+                                    <i data-lucide="external-link" class="w-5 h-5 mr-2"></i> Enroll Now
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <h3 class="2xl font-bold text-gray-900 mt-8 mb-4">Available Certification Tracks</h3>
+
+                    <!-- Certification Grid using the duplicated card structure -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${renderCertProfCard('ZAEH - Ethical Hacking Basics', 'Learn foundational penetration testing skills and vulnerability assessment specific to SA environments.', 'R 4,200', 'code')}
+                        ${renderCertProfCard('SA Data Privacy Compliance (SA-DPC)', 'Master POPIA (Protection of Personal Information Act) compliance and data governance.', 'R 5,800', 'shield-check')}
+                        ${renderCertProfCard('Cloud Security Fundamentals (CSCF)', 'Understand secure configuration of AWS, Azure, and Google Cloud for South African businesses.', 'R 6,100', 'cloud')}
+                        ${renderCertProfCard('Incident Response Analyst (IRA)', 'Training on handling security incidents, threat hunting, and digital forensics.', 'R 7,900', 'alert-octagon')}
+                        ${renderCertProfCard('Cyber Security Awareness Trainer', 'Learn how to create and deliver effective awareness campaigns to corporate teams.', 'R 3,500', 'presentation')}
+                        ${renderCertProfCard('Network Defense Architect (NDA)', 'Advanced modules on network architecture and perimeter defense strategies.', 'R 9,500', 'server')}
+                    </div>
+
+                    <!-- Media Campaign Component: Testimonials/Success Stories -->
+                    <section class="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+                        <h3 class="2xl font-bold text-gray-900 mb-4 flex items-center">
+                            <i data-lucide="volume-2" class="w-6 h-6 text-accent mr-3"></i> Certification Success Stories
+                        </h3>
+                        <p class="text-gray-600 mb-4">Hear how these certifications helped South Africans advance their careers.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="p-3 bg-indigo-50 rounded-xl flex items-center justify-between">
+                                <span>Lwazi's Career Change</span>
+                                <button class="text-primary hover:text-indigo-700"><i data-lucide="headset" class="w-5 h-5"></i> Play</button>
+                            </div>
+                            <div class="p-3 bg-indigo-50 rounded-xl flex items-center justify-between">
+                                <span>The Best ROI in Tech</span>
+                                <button class="text-primary hover:text-indigo-700"><i data-lucide="headset" class="w-5 h-5"></a> Play</button>
+                            </div>
+                            <div class="p-3 bg-indigo-50 rounded-xl flex items-center justify-between">
+                                <span>From Helpdesk to Security</span>
+                                <button class="text-primary hover:text-indigo-700"><i data-lucide="headset" class="w-5 h-5"></i> Play</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            `;
+        }
+
+        // --- LLM INCIDENT REPORTING LOGIC ---
+
+        async function generateReportSummary() {
+            const incidentType = document.getElementById('report-incident-type').value;
+            const incidentDetails = document.getElementById('report-details').value.trim();
+            const reportSummaryBox = document.getElementById('generated-report-summary');
+            const generateButton = document.getElementById('generate-report-button');
+
+            if (incidentDetails.length < 50) {
+                reportSummaryBox.innerHTML = '<p class="text-red-500 font-semibold">Please provide more detailed information (min 50 characters) before generating the report summary.</p>';
+                return;
+            }
+
+            const originalButtonHtml = generateButton.innerHTML;
+            generateButton.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 mr-2 animate-spin"></i> Generating Summary...`;
+            generateButton.disabled = true;
+
+            const userPrompt = `I need a concise, professional, single-paragraph summary for a cybersecurity incident report. The incident type is: "${incidentType}". Details are: "${incidentDetails}". Focus on the technical facts and impact, ensuring a formal tone suitable for management review.`;
+
+            const systemInstruction = "You are a specialized Cybersecurity Incident Report Analyst. Your only task is to transform raw incident details into a professional, factual, single-paragraph summary for formal reporting. Do not add conversational text or formatting (like titles, bullet points, or new lines) to the summary.";
+            
+            // Use Gemini without search for structured output
+            const result = await callGeminiAPI(userPrompt, systemInstruction, false); 
+
+            reportSummaryBox.innerHTML = `
+                <h4 class="font-bold text-lg text-primary mb-2 flex items-center"><i data-lucide="file-text" class="w-5 h-5 mr-2"></i> ✨ Professional Summary Draft:</h4>
+                <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg whitespace-pre-wrap">${result.text}</div>
+                <p class="text-xs text-gray-500 mt-2">Use this summary for the official incident report document.</p>
+            `;
+
+            generateButton.innerHTML = originalButtonHtml;
+            generateButton.disabled = false;
+            lucide.createIcons();
+        }
+
+        function getResourcesView() {
+            const infographic = (title, icon) => `
+                <div class="p-5 bg-white rounded-xl shadow-md border border-gray-100 flex items-center justify-between hover:shadow-lg transition duration-150">
+                    <div class="flex items-center space-x-4">
+                        <div class="p-2 rounded-full bg-primary/10 text-primary">
+                            <i data-lucide="${icon}" class="w-5 h-5"></i>
+                        </div>
+                        <span class="font-medium text-gray-900">${title}</span>
+                    </div>
+                    <button class="text-accent font-semibold text-sm flex items-center hover:text-cyan-600">
+                        <i data-lucide="download" class="w-4 h-4 mr-1"></i> Download
+                    </button>
+                </div>
+            `;
+
+            return `
+                <div id="view-resources" class="p-4 lg:p-8 space-y-8">
+                    <h2 class="text-3xl font-bold text-gray-900">Resources, Guides & Reporting</h2>
+                    <p class="text-gray-600">Access essential downloadable resources and securely report any potential cyber incidents.</p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- LLM INCIDENT REPORTING FORM -->
+                        <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-xl border border-gray-100">
+                            <h3 class="2xl font-bold text-red-600 mb-4 flex items-center">
+                                <i data-lucide="file-text" class="w-6 h-6 mr-2"></i> Incident Reporting & Summary Tool
+                            </h3>
+                            <p class="text-gray-600 mb-6">Use this form to quickly report suspected cybercrime. Use the **AI Summary Tool** to generate a professional report draft from your details.</p>
+                            
+                            <form class="space-y-4" onsubmit="event.preventDefault()">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Incident Type</label>
+                                    <select id="report-incident-type" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
+                                        <option>Phishing Attempt</option>
+                                        <option>Data Breach / Leak</option>
+                                        <option>Ransomware</option>
+                                        <option>Other Scam</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Details (Min 50 characters)</label>
+                                    <textarea id="report-details" rows="4" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary" placeholder="Describe the incident, including time, affected systems, and impact..."></textarea>
+                                </div>
+                                
+                                <div id="generated-report-summary" class="p-4 bg-yellow-50 text-yellow-800 rounded-xl text-sm font-medium">
+                                    The AI Summary will appear here after generation.
+                                </div>
+
+                                <button id="generate-report-button" onclick="generateReportSummary()" class="w-full py-3 bg-primary text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition duration-150 flex items-center justify-center">
+                                    <i data-lucide="sparkles" class="w-5 h-5 mr-2"></i> Generate Summary ✨
+                                </button>
+                            </form>
+                            
+                            <p class="text-center text-sm text-gray-500 pt-4 border-t mt-4">
+                                Alternatively, use the button below to submit the raw details to authorities.
+                            </p>
+
+                            <button class="w-full py-3 bg-red-600 text-white font-bold rounded-xl shadow-md hover:bg-red-700 transition duration-150 flex items-center justify-center">
+                                <i data-lucide="flag" class="w-5 h-5 mr-2"></i> Submit Confidential Report
+                            </button>
+                        </div>
+
+                        <!-- Downloadable Resources & Links -->
+                        <div class="lg:col-span-1 space-y-6">
+                            <!-- Downloadables -->
+                            <div class="bg-gray-50 p-6 rounded-2xl shadow-lg border border-gray-100 space-y-3">
+                                <h3 class="text-xl font-bold text-gray-900 mb-2">Infographics & Posters</h3>
+                                ${infographic('Password Strength Guide (PDF)', 'file-text')}
+                                ${infographic('Phishing Red Flags Poster (PNG)', 'image')}
+                                ${infographic('Kids Digital Safety Pack (PDF)', 'users')}
+                            </div>
+
+                            <!-- Trusted Links -->
+                            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+                                <h3 class="text-xl font-bold text-gray-900 mb-3">Trusted Authorities</h3>
+                                <ul class="space-y-2 text-sm">
+                                    <li class="flex items-center">
+                                        <i data-lucide="link" class="w-4 h-4 mr-2 text-accent"></i> 
+                                        <a href="#" class="text-gray-700 hover:text-accent font-medium">SAPS Cybercrime Unit</a>
+                                    </li>
+                                    <li class="flex items-center">
+                                        <i data-lucide="link" class="w-4 h-4 mr-2 text-accent"></i> 
+                                        <a href="#" class="text-gray-700 hover:text-accent font-medium">FIC (Financial Intelligence Centre)</a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- CHATBOT LLM LOGIC ---
+
+        function appendMessage(sender, text, sources = []) {
+            const chatBody = document.getElementById('chat-messages');
+            if (!chatBody) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex justify-${sender === 'user' ? 'end' : 'start'}`;
+            
+            let messageHtml = `<div class="p-3 rounded-xl max-w-[80%] shadow-sm ${sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-gray-100 text-gray-800 rounded-tl-none'}" style="word-break: break-word;">
+                ${text}
+            `;
+
+            if (sources.length > 0) {
+                const sourceHtml = sources.map((s, i) => 
+                    `<span class="text-xs text-gray-500 block mt-1"><i data-lucide="link" class="w-3 h-3 inline-block mr-1"></i> Source ${i + 1}: <a href="${s.uri}" target="_blank" class="underline hover:text-primary transition">${s.title.substring(0, 50)}...</a></span>`
+                ).join('');
+                messageHtml += `<div class="mt-2 pt-2 border-t border-gray-300">${sourceHtml}</div>`;
+            }
+
+            messageHtml += `</div>`;
+            messageDiv.innerHTML = messageHtml;
+            chatBody.appendChild(messageDiv);
+            chatBody.scrollTop = chatBody.scrollHeight;
+            lucide.createIcons();
+        }
+
+        async function handleChatSend() {
+            const input = document.getElementById('chat-input');
+            const userQuery = input.value.trim();
+            const sendButton = document.getElementById('chat-send-button');
+
+            if (userQuery === "") return;
+
+            appendMessage('user', userQuery);
+            input.value = '';
+            input.disabled = true;
+            sendButton.disabled = true;
+
+            // Show loading indicator
+            appendMessage('agent', '<span id="loading-dots"><i data-lucide="loader-2" class="w-4 h-4 animate-spin inline-block mr-1"></i> Thinking...</span>');
+
+            const systemInstruction = "You are the Cyber-Safe ZA AI Safety Agent, a friendly and expert guide on cybersecurity in South Africa. Provide clear, concise, and contextually relevant advice. Use the Google Search tool to ensure your information on current threats is up-to-date.";
+
+            const result = await callGeminiAPI(userQuery, systemInstruction, true);
+
+            // Remove loading message and replace with final response
+            const chatBody = document.getElementById('chat-messages');
+            if (chatBody && chatBody.lastChild) {
+                chatBody.removeChild(chatBody.lastChild);
+            }
+            
+            appendMessage('agent', result.text, result.sources);
+
+            input.disabled = false;
+            sendButton.disabled = false;
+            input.focus();
+        }
+
+        function toggleAIChat(show) {
+            const chatWindow = document.getElementById('ai-chat-window');
+            if (show === true) {
+                chatWindow.classList.remove('hidden');
+                document.getElementById('ai-agent-button').classList.add('hidden');
+                document.getElementById('chat-input').focus();
+            } else if (show === false) {
+                chatWindow.classList.add('hidden');
+                document.getElementById('ai-agent-button').classList.remove('hidden');
+            } else {
+                chatWindow.classList.toggle('hidden');
+                document.getElementById('ai-agent-button').classList.toggle('hidden');
+                if (!chatWindow.classList.contains('hidden')) {
+                     document.getElementById('chat-input').focus();
+                }
+            }
+            lucide.createIcons();
+        }
+
+        function getMobileHeader() {
+            return `
+                <header class="lg:hidden bg-white shadow-md p-4 flex items-center justify-between sticky top-0 z-10">
+                    <h1 class="text-xl font-bold text-gray-900" id="header-title">Dashboard</h1>
+                    <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden');" class="text-gray-600 hover:text-primary p-2 rounded-lg">
+                        <i data-lucide="menu" class="w-6 h-6"></i>
+                    </button>
+                </header>
+                <!-- Mobile Menu Drawer (hidden by default) -->
+                <div id="mobile-menu" class="hidden fixed inset-0 z-20 bg-white/95 backdrop-blur-sm lg:hidden flex-col">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-8">
+                            <div class="text-2xl font-extrabold text-gray-900 flex items-center">
+                                <i data-lucide="shield-check" class="w-7 h-7 text-primary mr-2"></i>
+                                Ubuntu <span class="text-primary ml-1">Cyber</span>
+                            </div>
+                            <button onclick="document.getElementById('mobile-menu').classList.add('hidden');" class="text-gray-600 hover:text-primary p-2 rounded-lg">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+                        <nav class="flex flex-col space-y-4">
+                            ${getNavLink('home', 'Home', 'layout-dashboard', true)}
+                            ${getNavLink('tutorials', 'Interactive Tutorials', 'graduation-cap', true)}
+                            ${getNavLink('threat-map', 'Threat Map', 'map-pin', true)}
+                            ${getNavLink('alerts', 'Alerts & Notifications', 'bell', true)}
+                            ${getNavLink('resources', 'Resources & Reporting', 'book-open', true)}
+                            ${getNavLink('certs', 'Certifications', 'award', true)}
+                             <a onclick="showBiometricModal()" class="flex items-center p-3 rounded-xl hover:bg-red-50 text-gray-700 hover:text-red-600 transition duration-150 cursor-pointer">
+                                <i data-lucide="server-cog" class="w-5 h-5 mr-3"></i> Admin Console
+                            </a>
+                        </nav>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getSidebar() {
+            return `
+                <div class="hidden lg:flex lg:flex-col w-64 border-r border-gray-200 bg-white p-6 sticky top-0 h-screen">
+                    <div class="text-2xl font-extrabold text-gray-900 mb-8 flex items-center">
+                        <i data-lucide="shield-check" class="w-7 h-7 text-primary mr-2"></i>
+                        Ubuntu <span class="text-primary ml-1">Cyber</span>
+                    </div>
+                    <nav class="flex-grow space-y-2">
+                        ${getNavLink('home', 'Home', 'layout-dashboard')}
+                        ${getNavLink('tutorials', 'Tutorials', 'graduation-cap')}
+                        ${getNavLink('threat-map', 'Threat Map', 'map-pin')}
+                        ${getNavLink('alerts', 'Alerts', 'bell')}
+                        ${getNavLink('resources', 'Resources', 'book-open')}
+                        ${getNavLink('certs', 'Certifications', 'award')}
+                         <a onclick="showBiometricModal()" class="flex items-center p-3 rounded-xl hover:bg-red-50 text-gray-700 hover:text-red-600 transition duration-150 cursor-pointer">
+                            <i data-lucide="server-cog" class="w-5 h-5 mr-3"></i> Admin Console
+                        </a>
+                    </nav>
+                    <div class="mt-8 pt-4 border-t border-gray-100">
+                        <div class="flex items-center space-x-3 p-3 rounded-xl bg-gray-50">
+                            <img class="w-10 h-10 rounded-full" src="https://placehold.co/40x40/4f46e5/ffffff?text=U" alt="User Avatar">
+                            <div>
+                                <div class="text-sm font-semibold text-gray-900">Admin User (Critical Tier)</div>
+                                <div class="text-xs text-gray-500">Connected</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getMobileFooterNav() {
+            return `
+                <div class="lg:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 z-10 shadow-[0_-5px_20px_-15px_rgba(0,0,0,0.1)]">
+                    <div class="flex justify-around items-center h-16">
+                        ${getNavLink('home', 'Home', 'layout-dashboard', true)}
+                        ${getNavLink('tutorials', 'Learn', 'graduation-cap', true)}
+                        ${getNavLink('threat-map', 'Threats', 'map-pin', true)}
+                        ${getNavLink('alerts', 'Alerts', 'bell', true)}
+                    </div>
+                </div>
+            `;
+        }
+
+        function getNavLink(viewKey, label, icon, isMobile = false) {
+            const id = `nav-${viewKey}-${isMobile ? 'mobile' : 'desktop'}`;
+            const classes = isMobile 
+                ? 'flex-1 inline-flex flex-col items-center justify-center p-2 text-xs font-medium text-gray-500 hover:text-primary transition duration-150' 
+                : 'flex items-center p-3 rounded-xl hover:bg-indigo-50 text-gray-700 hover:text-primary transition duration-150 cursor-pointer';
+
+            return `<a id="${id}" onclick="setView('${viewKey}')" class="${classes}">
+                <i data-lucide="${icon}" class="${isMobile ? 'w-5 h-5 mb-0.5' : 'w-5 h-5 mr-3'}"></i>
+                <span class="${isMobile ? 'mt-1' : 'font-medium'}">${label}</span>
+            </a>`;
+        }
+
+        // --- Main App Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const appContainer = document.getElementById('app-container');
+            
+            // Build the main app HTML structure
+            appContainer.innerHTML = `
+                ${getMobileHeader()}
+                <div class="flex flex-grow overflow-hidden">
+                    <!-- Desktop Sidebar -->
+                    ${getSidebar()}
+                    
+                    <!-- Main Content Area -->
+                    <main id="main-content-area" class="flex-grow overflow-y-auto pb-20 lg:pb-0">
+                        <!-- Content will be injected here by renderApp() -->
+                    </main>
+                </div>
+                ${getMobileFooterNav()}
+
+                <!-- AI Cyber-Safety Agent Button (Floating) -->
+                <button id="ai-agent-button" onclick="toggleAIChat(true)" 
+                    class="fixed bottom-20 right-5 lg:bottom-8 lg:right-8 p-4 bg-primary text-white rounded-full shadow-2xl hover:bg-indigo-700 transition duration-300 z-30 transform hover:scale-110">
+                    <i data-lucide="bot" class="w-7 h-7"></i>
+                </button>
+
+                <!-- AI Cyber-Safety Agent Chat Window -->
+                <div id="ai-chat-window" class="hidden fixed bottom-5 right-5 lg:bottom-8 lg:right-8 w-11/12 max-w-sm h-96 bg-white rounded-2xl shadow-2xl border border-gray-200 z-40 flex flex-col overflow-hidden">
+                    <!-- Chat Header -->
+                    <div class="flex items-center justify-between p-4 bg-primary text-white rounded-t-xl">
+                        <div class="flex items-center">
+                            <i data-lucide="bot" class="w-5 h-5 mr-2"></i>
+                            <span class="font-bold">AI Safety Agent</span>
+                        </div>
+                        <button onclick="toggleAIChat(false)" class="text-white hover:text-indigo-200 p-1 rounded-full">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Chat Messages -->
+                    <div id="chat-messages" class="flex-grow p-4 space-y-4 overflow-y-auto custom-scroll">
+                        <!-- Initial Message -->
+                        <div class="flex justify-start">
+                            <div class="bg-gray-100 p-3 rounded-xl rounded-tl-none max-w-[80%] text-gray-800 shadow-sm">
+                                Hello! I'm your **AI Cyber-Safety Agent**. Ask me anything about digital security in South Africa, or ask about current scams!
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input -->
+                    <div class="p-4 border-t border-gray-200 flex items-center space-x-2">
+                        <button class="p-2 text-primary hover:text-indigo-700 rounded-full bg-indigo-50 transition duration-150">
+                            <i data-lucide="mic" class="w-5 h-5"></i>
+                        </button>
+                        <input id="chat-input" type="text" placeholder="Type your security question..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-primary focus:border-primary text-sm">
+                        <button id="chat-send-button" onclick="handleChatSend()" class="p-2 text-white bg-primary rounded-xl hover:bg-indigo-700 transition duration-150">
+                            <i data-lucide="send" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Initial render, slight delay added to ensure DOM registration is complete
+            // This is the key fix for ensuring elements are targetable on load.
+            setTimeout(renderApp, 50); 
+            
+            // Event listener for chat input (Enter key)
+            document.getElementById('app-container').addEventListener('keydown', (e) => {
+                if (e.target.id === 'chat-input' && e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    document.getElementById('chat-send-button').click();
+                }
+            });
+        });
+    </script>
+    
+    <div id="app-container" class="flex flex-col min-h-screen">
+        <!-- Content will be injected by JavaScript -->
+    </div>
+
+    <!-- NEW: Reusable Modal Container for Games/Quizzes/Biometrics (Hidden by default) -->
+    <div id="game-modal" class="hidden fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center p-4">
+        <div id="modal-content-wrapper" class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <!-- Content will be injected here -->
+        </div>
+    </div>
+</body>
+</html>
