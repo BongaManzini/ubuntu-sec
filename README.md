@@ -1,8 +1,12 @@
 # UbuntuSec – Cybersecurity Awareness Platform
 
+> **NEMISA Discothon Hackathon Project**  
+> **Challenge:** "Using available resources, create something to empower the youth in cybersecurity."  
+> **Deliverable:** A web application that teaches core cybersecurity fundamentals, phishing defense, and actionable ways to protect communities.  
+> **Author:** Bonga Manzini (UNISA BSc Informatics Student)  
 > *"Umuntu ngumuntu ngabantu" — I am because we are.*
 
-**UbuntuSec** is a South African cybersecurity awareness platform inspired by the Ubuntu philosophy. Built in partnership with NEMISA (National Electronic Media Institute of South Africa), UbuntuSec empowers individuals and communities across South Africa to recognise, respond to, and report cyber threats — together.
+**UbuntuSec** is a South African cybersecurity awareness platform inspired by the Ubuntu philosophy. Built for the NEMISA Discothon, UbuntuSec empowers youth and communities across South Africa to recognise, respond to, and report cyber threats — together.
 
 ---
 
