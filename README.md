@@ -1,9 +1,9 @@
 # UbuntuSec – Cybersecurity Awareness Platform
 
-> **NEMISA Discothon Hackathon Project**  
-> **Challenge:** "Using available resources, create something to empower the youth in cybersecurity."  
-> **Deliverable:** A web application that teaches core cybersecurity fundamentals, phishing defense, and actionable ways to protect communities.  
-> **Author:** Bonga Manzini (UNISA BSc Informatics Student)  
+> **NEMISA Discothon Hackathon Project** 
+> **Challenge:** "Using available resources, create something to empower the youth in cybersecurity." 
+> **Deliverable:** A web application that teaches core cybersecurity fundamentals, phishing defense, and actionable ways to protect communities. 
+> **Author:** Bonga Manzini (UNISA BSc Informatics Student) 
 > *"Umuntu ngumuntu ngabantu" — I am because we are.*
 
 **UbuntuSec** is a South African cybersecurity awareness platform inspired by the Ubuntu philosophy. Built for the NEMISA Discothon, UbuntuSec empowers youth and communities across South Africa to recognise, respond to, and report cyber threats — together.
@@ -51,20 +51,20 @@
 
 ```
 UbuntuSec/
-├── firstworld.html                        # Main platform (full multi-page SPA)
-├── CybersecurityAwarenessPlatform/        # React/Vite prototype
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── figma/                     # Figma-exported component specs
-│   │   │   └── ui/                        # Reusable UI components
-│   │   ├── guidelines/                    # Design system guidelines
-│   │   └── styles/                        # Global styles
-│   └── streamlit_files/                   # Python data profiling scripts
-│       ├── app.py
-│       ├── app_plots.py
-│       ├── app_profiler.py
-│       ├── app_profiler_menus.py
-│       └── run_streamlit.py
+├── firstworld.html            # Main platform (full multi-page SPA)
+├── CybersecurityAwarenessPlatform/    # React/Vite prototype
+│  ├── src/
+│  │  ├── components/
+│  │  │  ├── figma/           # Figma-exported component specs
+│  │  │  └── ui/            # Reusable UI components
+│  │  ├── guidelines/          # Design system guidelines
+│  │  └── styles/            # Global styles
+│  └── streamlit_files/          # Python data profiling scripts
+│    ├── app.py
+│    ├── app_plots.py
+│    ├── app_profiler.py
+│    ├── app_profiler_menus.py
+│    └── run_streamlit.py
 └── README.md
 ```
 
@@ -78,9 +78,9 @@ The parent `NEMISA/index.html` serves as the **Cyber-Safe ZA** landing page and 
 
 ```bash
 # Clone or download the repository, then simply open:
-open firstworld.html        # macOS
-xdg-open firstworld.html    # Linux
-start firstworld.html       # Windows
+open firstworld.html    # macOS
+xdg-open firstworld.html  # Linux
+start firstworld.html    # Windows
 ```
 
 ### Option 2 — Serve with any HTTP server

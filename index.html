@@ -1801,7 +1801,7 @@
             const result = await callGeminiAPI(userPrompt, systemInstruction, false); 
 
             reportSummaryBox.innerHTML = `
-                <h4 class="font-bold text-lg text-primary mb-2 flex items-center"><i data-lucide="file-text" class="w-5 h-5 mr-2"></i> ✨ Professional Summary Draft:</h4>
+                <h4 class="font-bold text-lg text-primary mb-2 flex items-center"><i data-lucide="file-text" class="w-5 h-5 mr-2"></i>  Professional Summary Draft:</h4>
                 <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg whitespace-pre-wrap">${result.text}</div>
                 <p class="text-xs text-gray-500 mt-2">Use this summary for the official incident report document.</p>
             `;
@@ -1859,7 +1859,7 @@
                                 </div>
 
                                 <button id="generate-report-button" onclick="generateReportSummary()" class="w-full py-3 bg-primary text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition duration-150 flex items-center justify-center">
-                                    <i data-lucide="sparkles" class="w-5 h-5 mr-2"></i> Generate Summary ✨
+                                    <i data-lucide="sparkles" class="w-5 h-5 mr-2"></i> Generate Summary 
                                 </button>
                             </form>
                             
